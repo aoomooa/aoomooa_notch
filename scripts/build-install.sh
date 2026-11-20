@@ -30,7 +30,7 @@ fi
 # SCHEME：Xcode 里的 scheme 名，一般不用改
 SCHEME="${SCHEME:-boringNotch}"
 # APP_NAME：安装到 /Applications 下的名字（不带 .app）
-APP_NAME="${APP_NAME:-aoomooa}"
+APP_NAME="${APP_NAME:-aoomooa🉐刘海屏}"
 # BUNDLE_ID：必须和 project.pbxproj 里主 App 的 PRODUCT_BUNDLE_IDENTIFIER 一致；
 #            如果要换，两边一起换（XPC 助手的 ID 不要动）
 BUNDLE_ID="${BUNDLE_ID:-com.aoomooa.notch}"
@@ -119,6 +119,8 @@ for _ in {1..20}; do
 done
 
 echo "▶ 安装到 ${DEST}"
+# 旧名字的安装位置一起清掉
+[[ "${DEST}" != "/Applications/aoomooa.app" ]] && rm -rf "/Applications/aoomooa.app"
 rm -rf "${DEST}"
 ditto "${BUILT}" "${DEST}"
 

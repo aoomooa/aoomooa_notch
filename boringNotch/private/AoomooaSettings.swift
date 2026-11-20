@@ -320,7 +320,7 @@ struct AoomooaSettingsView: View {
 // MARK: - 诊断信息
 
 enum AoomooaDiagnostics {
-    static let fixedInstallPath = "/Applications/aoomooa.app"
+    static let fixedInstallPath = "/Applications/aoomooa🉐刘海屏.app"
 
     static var isInstalledAtFixedPath: Bool {
         Bundle.main.bundlePath == fixedInstallPath

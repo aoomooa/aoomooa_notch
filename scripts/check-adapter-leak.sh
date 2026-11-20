@@ -7,7 +7,7 @@
 #
 set -uo pipefail
 
-APP="/Applications/aoomooa.app"
+APP="/Applications/aoomooa🉐刘海屏.app"
 BUNDLE_ID="com.aoomooa.notch"
 ROUNDS="${1:-10}"
 

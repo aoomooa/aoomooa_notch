@@ -1234,8 +1234,8 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = boringNotch/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = aoomooa;
-				INFOPLIST_KEY_CFBundleName = aoomooa;
+				INFOPLIST_KEY_CFBundleDisplayName = "aoomooa🉐刘海屏";
+				INFOPLIST_KEY_CFBundleName = "aoomooa🉐刘海屏";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSBackgroundOnly = NO;
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -1288,8 +1288,8 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = boringNotch/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = aoomooa;
-				INFOPLIST_KEY_CFBundleName = aoomooa;
+				INFOPLIST_KEY_CFBundleDisplayName = "aoomooa🉐刘海屏";
+				INFOPLIST_KEY_CFBundleName = "aoomooa🉐刘海屏";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSBackgroundOnly = NO;
 				INFOPLIST_KEY_LSUIElement = YES;
