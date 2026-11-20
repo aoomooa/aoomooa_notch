@@ -65,6 +65,34 @@ final class FavouriteSitesModel: ObservableObject {
         save()
     }
 
+    /// 上移 / 下移（设置页排序用）
+    func move(_ site: FavouriteSite, by offset: Int) {
+        guard let i = sites.firstIndex(where: { $0.url == site.url }) else { return }
+        let j = i + offset
+        guard sites.indices.contains(j) else { return }
+        withAnimation(DS.Motion.micro) { sites.swapAt(i, j) }
+        save()
+    }
+
+    /// 恢复成第一次打开时的网站列表
+    func resetToDefaults() {
+        withAnimation(DS.Motion.micro) { sites = Self.defaults }
+        save()
+    }
+
+    /// 把输入的网址整理好再添加；返回是否添加成功
+    @discardableResult
+    func add(title: String, address: String) -> Bool {
+        var text = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return false }
+        if !text.contains("://") { text = "https://" + text }
+        guard let url = URL(string: text), let host = url.host else { return false }
+        guard !sites.contains(where: { $0.url == text }) else { return false }
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        add(title: name.isEmpty ? host.replacingOccurrences(of: "www.", with: "") : name, url: text)
+        return true
+    }
+
     /// Ask for a web address and add it
     func promptAdd() {
         let alert = NSAlert()
@@ -78,11 +106,7 @@ final class FavouriteSitesModel: ObservableObject {
         NSApp.activate()
         alert.window.initialFirstResponder = field
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        var text = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        if !text.contains("://") { text = "https://" + text }
-        guard let url = URL(string: text), let host = url.host else { return }
-        add(title: host.replacingOccurrences(of: "www.", with: ""), url: text)
+        add(title: "", address: field.stringValue)
     }
 
     /// Pick any image (png / jpg / svg / icns …) to use as this site's icon
