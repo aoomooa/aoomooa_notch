@@ -369,11 +369,30 @@ final class ShelfItemViewModel: ObservableObject {
 
         menu.addItem(NSMenuItem.separator())
         addMenuItem(title: "Remove")
+        // aoomooa: like Finder — really move the file(s) to the Trash
+        if !selectedFileURLs.isEmpty { addMenuItem(title: "Move to Trash") }
 
         let actionTarget = MenuActionTarget(item: item, view: view, viewModel: self)
 
+        // aoomooa: show Chinese (Finder-style) titles; the English title stays as the identifier
+        let zh: [String: String] = [
+            "Open": "打开", "Open With": "打开方式", "Other…": "其他…",
+            "Show in Finder": "在访达中显示", "Quick Look": "快速查看", "Share…": "共享…",
+            "Image Actions": "图像操作", "Remove Background": "移除背景",
+            "Convert Image…": "转换图像…", "Create PDF": "创建 PDF", "Compress": "压缩",
+            "Rename": "重新命名", "Copy": "拷贝", "Copy Path": "拷贝路径",
+            "Remove": "从托盘移除", "Move to Trash": "移到废纸篓"
+        ]
+        func localize(_ mi: NSMenuItem) {
+            guard let cn = zh[mi.title] else { return }
+            mi.identifier = NSUserInterfaceItemIdentifier(mi.title)
+            mi.title = cn
+        }
+
         for menuItem in menu.items {
             if menuItem.isSeparatorItem { continue }
+            localize(menuItem)
+            menuItem.submenu?.items.forEach { if !$0.isSeparatorItem { localize($0) } }
             menuItem.target = actionTarget
             menuItem.action = #selector(MenuActionTarget.handle(_:))
 
@@ -413,7 +432,7 @@ final class ShelfItemViewModel: ObservableObject {
         }
 
         @MainActor @objc func handle(_ sender: NSMenuItem) {
-            let title = sender.title
+            let title = sender.identifier?.rawValue ?? sender.title   // aoomooa: English key
 
             if let marker = sender.representedObject as? String, marker == "__OTHER__" {
                 openWithPanel()
@@ -543,6 +562,32 @@ final class ShelfItemViewModel: ObservableObject {
             case "Remove":
                 let selected = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
                 for it in selected { ShelfActionService.remove(it) }
+
+            case "Move to Trash":
+                let selected = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
+                Task {
+                    let urls = await selected.asyncCompactMap { item -> URL? in
+                        if case .file = item.kind {
+                            return await ShelfStateViewModel.shared.resolveAndUpdateBookmark(for: item)
+                        }
+                        return nil
+                    }
+                    guard !urls.isEmpty else { return }
+                    let trashed: Bool = await urls.accessSecurityScopedResources { accessible in
+                        var allOK = true
+                        for url in accessible {
+                            do { try FileManager.default.trashItem(at: url, resultingItemURL: nil) }
+                            catch { allOK = false; NSLog("aoomooa: move to trash failed for \(url.path): \(error)") }
+                        }
+                        return allOK
+                    }
+                    if trashed {
+                        NSSound(named: "Glass")?.play()
+                        for it in selected { ShelfActionService.remove(it) }
+                    } else {
+                        NSSound.beep()   // aoomooa: couldn't trash it — the file stays in the tray
+                    }
+                }
                 
             case "Remove Background":
                 handleRemoveBackground()

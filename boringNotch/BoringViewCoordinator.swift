@@ -230,6 +230,15 @@ class BoringViewCoordinator: ObservableObject {
         }
     }
 
+    // aoomooa: show/hide the music peek instantly, without animation
+    func setMusicPeekInstant(_ show: Bool, duration: TimeInterval = 10) {
+        sneakPeekDuration = duration
+        withTransaction(AoomooaHover.instant) {
+            sneakPeek.type = .music
+            sneakPeek.show = show
+        }
+    }
+
     private var sneakPeekDuration: TimeInterval = 1.5
     private var sneakPeekTask: Task<Void, Never>?
 

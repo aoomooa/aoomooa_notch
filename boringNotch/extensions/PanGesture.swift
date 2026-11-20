@@ -105,6 +105,10 @@ private struct ScrollMonitor: NSViewRepresentable {
         }
 
         private func handleScroll(_ event: NSEvent) {
+            // aoomooa: ignore the inertia that keeps scrolling after the fingers lift —
+            // it was read as a second swipe and made the notch skip a page
+            if !event.momentumPhase.isEmpty { return }
+
             if event.phase == .ended || event.momentumPhase == .ended {
                 if active {
                     action(accumulated.magnitude, .ended)

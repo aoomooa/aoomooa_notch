@@ -25,6 +25,13 @@ struct ContentView: View {
     @ObservedObject var volumeManager = VolumeManager.shared
     @State private var hoverTask: Task<Void, Never>?
     @State private var isHovering: Bool = false
+    @State private var stage1Task: Task<Void, Never>?   // aoomooa
+    @State private var collapseTask: Task<Void, Never>? // aoomooa
+    @State private var swipeLatched = false                 // aoomooa: one action per swipe
+    @State private var swipeOffset: CGFloat = 0             // aoomooa: page follows the fingers
+    @State private var pageDirection: CGFloat = 0           // aoomooa: 0 = drop from top, ±1 = slide sideways
+    @State private var swipeCooldownUntil = Date.distantPast
+    @State private var hoverProgress: CGFloat = 0           // aoomooa: streamline sweep 0…1
     @State private var anyDropDebounceTask: Task<Void, Never>?
 
     @State private var gestureProgress: CGFloat = .zero
@@ -38,7 +45,7 @@ struct ContentView: View {
     @Default(.showNotHumanFace) var showNotHumanFace
 
     // Shared interactive spring for movement/resizing to avoid conflicting animations
-    private let animationSpring = Animation.interactiveSpring(response: 0.38, dampingFraction: 0.8, blendDuration: 0)
+    private let animationSpring = Animation.interactiveSpring(response: 0.40, dampingFraction: 0.72, blendDuration: 0)
 
     private let extendedHoverPadding: CGFloat = 30
     private let zeroHeightHoverPadding: CGFloat = 10
@@ -100,13 +107,39 @@ struct ContentView: View {
                         : cornerRadiusInsets.closed.bottom
                     )
                     .padding([.horizontal, .bottom], vm.notchState == .open ? 12 : 0)
-                    .background(.black)
+                    .background {
+                        // aoomooa: direction B — the open notch takes the album-art colour
+                        ZStack {
+                            Color.black
+                            if vm.notchState == .open
+                                && coordinator.currentView == .home
+                                && !musicManager.isPlayerIdle {
+                                LinearGradient(
+                                    colors: [.clear, Color(nsColor: musicManager.avgColor).opacity(AoomooaStyle.tintStrength)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            }
+                        }
+                        .animation(.easeInOut(duration: AoomooaStyle.tintFade), value: musicManager.avgColor)
+                    }
                     .clipShape(currentNotchShape)
                     .overlay(alignment: .top) {
                         Rectangle()
                             .fill(.black)
                             .frame(height: 1)
                             .padding(.horizontal, topCornerRadius)
+                    }
+                    .overlay {
+                        // aoomooa: a streamline traces the island — down the left side, along the bottom,
+                        // up the right side — and the notch opens when it reaches the top-right corner
+                        if vm.notchState == .closed && isHovering && Defaults[.openNotchOnHover] {
+                            AoomooaOutlineStreak(progress: hoverProgress,
+                                                 topRadius: cornerRadiusInsets.closed.top,
+                                                 bottomRadius: cornerRadiusInsets.closed.bottom,
+                                                 hardwareWidth: vm.closedNotchSize.width)
+                                .allowsHitTesting(false)
+                        }
                     }
                     .shadow(
                         color: ((vm.notchState == .open || isHovering) && Defaults[.enableShadow])
@@ -120,8 +153,8 @@ struct ContentView: View {
                 mainLayout
                     .frame(height: vm.notchState == .open ? vm.notchSize.height : nil)
                     .conditionalModifier(true) { view in
-                        let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.8, blendDuration: 0)
-                        let closeAnimation = Animation.spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0)
+                        let openAnimation: Animation? = AoomooaHover.expandAnimation
+                        let closeAnimation: Animation? = AoomooaHover.collapseAnimation
                         
                         return view
                             .animation(vm.notchState == .open ? openAnimation : closeAnimation, value: vm.notchState)
@@ -146,6 +179,15 @@ struct ContentView: View {
                                 handleUpGesture(translation: translation, phase: phase)
                             }
                     }
+                    .conditionalModifier(Defaults[.enableGestures]) { view in
+                        view   // aoomooa: two-finger swipe left/right switches tabs
+                            .panGesture(direction: .left) { translation, phase in
+                                handleTabSwipe(step: 1, translation: translation, phase: phase)
+                            }
+                            .panGesture(direction: .right) { translation, phase in
+                                handleTabSwipe(step: -1, translation: translation, phase: phase)
+                            }
+                    }
                     .onReceive(NotificationCenter.default.publisher(for: .sharingDidFinish)) { _ in
                         if vm.notchState == .open && !isHovering && !vm.isBatteryPopoverActive {
                             hoverTask?.cancel()
@@ -162,9 +204,7 @@ struct ContentView: View {
                     }
                     .onChange(of: vm.notchState) { _, newState in
                         if newState == .closed && isHovering {
-                            withAnimation {
-                                isHovering = false
-                            }
+                            isHovering = false
                         }
                     }
                     .onChange(of: vm.isBatteryPopoverActive) {
@@ -343,19 +383,31 @@ struct ContentView: View {
               }
               .zIndex(2)
             if vm.notchState == .open {
-                VStack {
+                ZStack(alignment: .top) {   // aoomooa: pages overlap while switching
                     switch coordinator.currentView {
                     case .home:
-                        NotchHomeView(albumArtNamespace: albumArtNamespace)
+                        AoomooaIdleHomeView()   // aoomooa: now playing · sites · system status
+                            .transition(pageTransition)
                     case .shelf:
-                        ShelfView()
+                        NotchTrayView()   // aoomooa: AirDrop · tray · copy · remove
+                            .transition(pageTransition)
+                    case .reminders:
+                        NotchWorkspaceView()   // aoomooa: reminders | apps
+                            .transition(pageTransition)
+                    case .apps:
+                        NotchLauncherView()
+                            .transition(pageTransition)
                     }
                 }
                 .transition(
-                    .scale(scale: 0.8, anchor: .top)
-                    .combined(with: .opacity)
-                    .animation(.smooth(duration: 0.35))
+                    .asymmetric(
+                        insertion: .scale(scale: 0.96, anchor: .top)
+                            .combined(with: .opacity)
+                            .animation(AoomooaHover.expandAnimation),
+                        removal: .opacity.animation(AoomooaHover.collapseAnimation)
+                    )
                 )
+                .offset(x: swipeOffset)
                 .zIndex(1)
                 .allowsHitTesting(vm.notchState == .open)
                 .opacity(gestureProgress != 0 ? 1.0 - min(abs(gestureProgress) * 0.1, 0.3) : 1.0)
@@ -503,7 +555,7 @@ struct ContentView: View {
     }
 
     private func doOpen() {
-        withAnimation(animationSpring) {
+        withAnimation(AoomooaHover.expandAnimation) {
             vm.open()
         }
     }
@@ -512,45 +564,63 @@ struct ContentView: View {
 
     private func handleHover(_ hovering: Bool) {
         if coordinator.firstLaunch { return }
-        hoverTask?.cancel()
-        
+
+        // aoomooa: stage 1 instantly -> wait stage1Delay -> ease-out expand.
+        // Leaving collapses with no animation (after a tiny exitGrace that ignores
+        // the hover flicker SwiftUI emits while the notch changes size).
         if hovering {
-            withAnimation(animationSpring) {
-                isHovering = true
+            hoverTask?.cancel()
+            collapseTask?.cancel()
+            collapseTask = nil
+            withTransaction(AoomooaHover.instant) { isHovering = true }
+
+            guard vm.notchState == .closed else { return }
+            if stage1Task != nil { return }   // stage 1 already counting — don't restart
+
+            withTransaction(AoomooaHover.instant) {
+                if musicManager.isPlaying || !musicManager.isPlayerIdle {
+                    coordinator.setMusicPeekInstant(true)
+                }
             }
-            
-            if vm.notchState == .closed && Defaults[.enableHaptics] {
-                haptics.toggle()
-            }
-            
-            guard vm.notchState == .closed,
-                  !coordinator.sneakPeek.show,
-                  Defaults[.openNotchOnHover] else { return }
-            
-            hoverTask = Task {
-                try? await Task.sleep(for: .seconds(Defaults[.minimumHoverDuration]))
+            if Defaults[.enableHaptics] { haptics.toggle() }
+            guard Defaults[.openNotchOnHover] else { return }
+
+            withTransaction(AoomooaHover.instant) { hoverProgress = 0 }
+            withAnimation(.linear(duration: AoomooaHover.stage1Delay)) { hoverProgress = 1 }
+
+            stage1Task = Task {
+                try? await Task.sleep(for: .seconds(AoomooaHover.stage1Delay))
                 guard !Task.isCancelled else { return }
-                
                 await MainActor.run {
-                    guard self.vm.notchState == .closed,
-                          self.isHovering,
-                          !self.coordinator.sneakPeek.show else { return }
-                    
+                    self.stage1Task = nil
+                    guard self.vm.notchState == .closed, self.isHovering else { return }
+                    withTransaction(AoomooaHover.instant) {
+                        self.coordinator.setMusicPeekInstant(false)
+                        self.hoverProgress = 0
+                    }
                     self.doOpen()
                 }
             }
         } else {
-            hoverTask = Task {
-                try? await Task.sleep(for: .milliseconds(100))
+            collapseTask?.cancel()
+            collapseTask = Task {
+                try? await Task.sleep(for: .milliseconds(AoomooaHover.exitGraceMs))
                 guard !Task.isCancelled else { return }
-                
                 await MainActor.run {
-                    withAnimation(animationSpring) {
+                    self.collapseTask = nil
+                    self.stage1Task?.cancel()
+                    self.stage1Task = nil
+                    withTransaction(AoomooaHover.instant) {
                         self.isHovering = false
+                        self.hoverProgress = 0
+                        if self.coordinator.sneakPeek.show && self.coordinator.sneakPeek.type == .music {
+                            self.coordinator.setMusicPeekInstant(false)
+                        }
                     }
-                    
-                    if self.vm.notchState == .open && !self.vm.isBatteryPopoverActive && !SharingStateManager.shared.preventNotchClose {
-                        self.vm.close()
+                    if self.vm.notchState == .open
+                        && !self.vm.isBatteryPopoverActive
+                        && !SharingStateManager.shared.preventNotchClose {
+                        withAnimation(AoomooaHover.collapseAnimation) { self.vm.close() }
                     }
                 }
             }
@@ -561,6 +631,19 @@ struct ContentView: View {
 
     private func handleDownGesture(translation: CGFloat, phase: NSEvent.Phase) {
         guard vm.notchState == .closed else { return }
+
+        // aoomooa: if the playing live activity was swiped away, a swipe down brings it back
+        if !coordinator.musicLiveActivityEnabled && (musicManager.isPlaying || !musicManager.isPlayerIdle) {
+            if phase == .ended { swipeLatched = false; return }
+            guard !swipeLatched, translation > AoomooaHover.swipeDistance else { return }
+            swipeLatched = true
+            if Defaults[.enableHaptics] { haptics.toggle() }
+            withAnimation(AoomooaHover.expandAnimation) {
+                coordinator.objectWillChange.send()
+                coordinator.musicLiveActivityEnabled = true
+            }
+            return
+        }
 
         if phase == .ended {
             withAnimation(animationSpring) { gestureProgress = .zero }
@@ -582,7 +665,77 @@ struct ContentView: View {
         }
     }
 
+    /// Clicked tabs drop in from the top; swiped pages slide in from the side you swipe towards
+    private var pageTransition: AnyTransition {
+        guard pageDirection != 0 else { return AoomooaStyle.tabTransition }
+        return .asymmetric(
+            insertion: .offset(x: 70 * pageDirection).combined(with: .opacity),
+            removal: .offset(x: -70 * pageDirection).combined(with: .opacity)
+        )
+    }
+
+    // aoomooa: two-finger swipe left/right moves between the pages while the notch is open
+    private func handleTabSwipe(step: Int, translation: CGFloat, phase: NSEvent.Phase) {
+        if phase == .ended {
+            swipeLatched = false
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) { swipeOffset = 0 }
+            return
+        }
+        guard vm.notchState == .open, !swipeLatched, Date() >= swipeCooldownUntil,
+              !NotchRemindersModel.shared.isHoveringDayStrip,
+              !AoomooaGestureGate.horizontalScrollerHovered else { return }
+
+        let order = AoomooaStyle.swipeOrder   // Music · Workspace · Tray
+        guard let index = order.firstIndex(of: coordinator.currentView) else { return }
+        let next = index + step
+        let canMove = order.indices.contains(next)
+
+        // follow the fingers a little; at the first/last page it only stretches (rubber band)
+        let progress = min(translation / AoomooaHover.tabSwipeDistance, 1)
+        let follow = AoomooaHover.tabSwipeFollow * progress * (canMove ? 1 : 0.4)
+        withAnimation(.interactiveSpring(response: 0.2, dampingFraction: 0.86)) {
+            swipeOffset = -CGFloat(step) * follow
+        }
+
+        guard canMove, translation > AoomooaHover.tabSwipeDistance else { return }
+        swipeLatched = true
+        swipeCooldownUntil = Date().addingTimeInterval(AoomooaHover.tabSwipeCooldown)
+        if Defaults[.enableHaptics] { haptics.toggle() }
+
+        // set the direction first, then switch on the next run-loop so both pages use it
+        pageDirection = CGFloat(step)
+        Task { @MainActor in
+            await Task.yield()
+            withAnimation(.smooth(duration: 0.32)) {
+                swipeOffset = 0
+                coordinator.currentView = order[next]
+            }
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            pageDirection = 0
+        }
+    }
+
     private func handleUpGesture(translation: CGFloat, phase: NSEvent.Phase) {
+        // aoomooa: on the closed notch, two-finger swipe up hides the playing live activity
+        if vm.notchState == .closed {
+            if phase == .ended { swipeLatched = false; return }
+            guard !swipeLatched, translation > AoomooaHover.swipeDistance,
+                  coordinator.musicLiveActivityEnabled,
+                  musicManager.isPlaying || !musicManager.isPlayerIdle else { return }
+            swipeLatched = true
+            stage1Task?.cancel()
+            stage1Task = nil
+            withTransaction(AoomooaHover.instant) {
+                hoverProgress = 0
+                coordinator.setMusicPeekInstant(false)
+            }
+            if Defaults[.enableHaptics] { haptics.toggle() }
+            withAnimation(AoomooaHover.collapseAnimation) {
+                coordinator.objectWillChange.send()
+                coordinator.musicLiveActivityEnabled = false
+            }
+            return
+        }
         guard vm.notchState == .open && !vm.isHoveringCalendar else { return }
 
         withAnimation(animationSpring) {

@@ -99,9 +99,9 @@ extension Defaults.Keys {
     //static let alwaysShowTabs = Key<Bool>("alwaysShowTabs", default: true)
     static let showMirror = Key<Bool>("showMirror", default: false)
     static let mirrorShape = Key<MirrorShapeEnum>("mirrorShape", default: MirrorShapeEnum.rectangle)
-    static let settingsIconInNotch = Key<Bool>("settingsIconInNotch", default: true)
-    static let lightingEffect = Key<Bool>("lightingEffect", default: true)
-    static let enableShadow = Key<Bool>("enableShadow", default: true)
+    static let settingsIconInNotch = Key<Bool>("settingsIconInNotch", default: false)
+    static let lightingEffect = Key<Bool>("lightingEffect", default: false)
+    static let enableShadow = Key<Bool>("enableShadow", default: false)
     static let cornerRadiusScaling = Key<Bool>("cornerRadiusScaling", default: true)
 
     static let showNotHumanFace = Key<Bool>("showNotHumanFace", default: false)
@@ -124,7 +124,7 @@ extension Defaults.Keys {
     
     // MARK: Media playback
     static let coloredSpectrogram = Key<Bool>("coloredSpectrogram", default: true)
-    static let enableSneakPeek = Key<Bool>("enableSneakPeek", default: false)
+    static let enableSneakPeek = Key<Bool>("enableSneakPeek", default: true)
     static let sneakPeekStyles = Key<SneakPeekStyle>("sneakPeekStyles", default: .standard)
     static let waitInterval = Key<Double>("waitInterval", default: 3)
     static let showShuffleAndRepeat = Key<Bool>("showShuffleAndRepeat", default: false)
@@ -139,19 +139,19 @@ extension Defaults.Keys {
     )
     
     // MARK: Battery
-    static let showPowerStatusNotifications = Key<Bool>("showPowerStatusNotifications", default: true)
-    static let showBatteryIndicator = Key<Bool>("showBatteryIndicator", default: true)
+    static let showPowerStatusNotifications = Key<Bool>("showPowerStatusNotifications", default: false)
+    static let showBatteryIndicator = Key<Bool>("showBatteryIndicator", default: false)
     static let showBatteryPercentage = Key<Bool>("showBatteryPercentage", default: true)
     static let showPowerStatusIcons = Key<Bool>("showPowerStatusIcons", default: true)
     
     // MARK: Downloads
-    static let enableDownloadListener = Key<Bool>("enableDownloadListener", default: true)
+    static let enableDownloadListener = Key<Bool>("enableDownloadListener", default: false)
     static let enableSafariDownloads = Key<Bool>("enableSafariDownloads", default: true)
     static let selectedDownloadIndicatorStyle = Key<DownloadIndicatorStyle>("selectedDownloadIndicatorStyle", default: DownloadIndicatorStyle.progress)
     static let selectedDownloadIconStyle = Key<DownloadIconStyle>("selectedDownloadIconStyle", default: DownloadIconStyle.onlyAppIcon)
     
     // MARK: HUD
-    static let hudReplacement = Key<Bool>("hudReplacement", default: false)
+    static let hudReplacement = Key<Bool>("hudReplacement", default: true)
     static let inlineHUD = Key<Bool>("inlineHUD", default: false)
     static let enableGradient = Key<Bool>("enableGradient", default: false)
     static let systemEventIndicatorShadow = Key<Bool>("systemEventIndicatorShadow", default: false)
@@ -164,7 +164,7 @@ extension Defaults.Keys {
     
     // MARK: Shelf
     static let boringShelf = Key<Bool>("boringShelf", default: true)
-    static let openShelfByDefault = Key<Bool>("openShelfByDefault", default: true)
+    static let openShelfByDefault = Key<Bool>("openShelfByDefault", default: false)
     static let shelfTapToOpen = Key<Bool>("shelfTapToOpen", default: true)
     static let quickShareProvider = Key<String>("quickShareProvider", default: QuickShareProvider.defaultProvider.id)
     static let copyOnDrag = Key<Bool>("copyOnDrag", default: false)

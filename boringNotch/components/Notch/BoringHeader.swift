@@ -16,7 +16,7 @@ struct BoringHeader: View {
     var body: some View {
         HStack(spacing: 0) {
             HStack {
-                if (!tvm.isEmpty || coordinator.alwaysShowTabs) && Defaults[.boringShelf] {
+                if vm.notchState == .open { // aoomooa: always show tabs (Home / Reminders)
                     TabSelectionView()
                 } else if vm.notchState == .open {
                     EmptyView()
@@ -58,6 +58,22 @@ struct BoringHeader: View {
                             }
                             .buttonStyle(PlainButtonStyle())
                         }
+                        // aoomooa: Tray button, left of the settings gear
+                        Button(action: {
+                            withAnimation(.smooth(duration: 0.3)) {
+                                coordinator.currentView = coordinator.currentView == .shelf ? .home : .shelf
+                            }
+                        }) {
+                            Capsule()
+                                .fill(coordinator.currentView == .shelf ? Color(nsColor: .secondarySystemFill) : Color.black)
+                                .frame(width: 30, height: 30)
+                                .overlay {
+                                    Image(systemName: "tray.full")
+                                        .foregroundColor(coordinator.currentView == .shelf ? .white : .gray)
+                                        .imageScale(.medium)
+                                }
+                        }
+                        .buttonStyle(PlainButtonStyle())
                         if Defaults[.settingsIconInNotch] {
                             Button(action: {
                                 DispatchQueue.main.async {

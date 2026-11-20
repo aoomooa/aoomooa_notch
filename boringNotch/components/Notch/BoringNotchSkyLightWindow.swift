@@ -109,6 +109,7 @@ class BoringNotchSkyLightWindow: NSPanel {
     
     private var observers: Set<AnyCancellable> = []
     
-    override var canBecomeKey: Bool { false }
+    // aoomooa: accept keyboard input only while the Reminders tab is showing
+    override var canBecomeKey: Bool { BoringViewCoordinator.shared.currentView == .reminders }
     override var canBecomeMain: Bool { false }
 }

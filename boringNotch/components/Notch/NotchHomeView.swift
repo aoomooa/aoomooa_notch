@@ -58,11 +58,12 @@ struct AlbumArtView: View {
     private var albumArtButton: some View {
         ZStack {
             Button {
-                musicManager.openMusicApp()
+                // aoomooa: only jump to the player when something is actually loaded
+                if !musicManager.isPlayerIdle { musicManager.openMusicApp() }
             } label: {
                 ZStack(alignment:.bottomTrailing) {
                     albumArtImage
-                    appIconOverlay
+                    // appIconOverlay  // aoomooa: no app badge on album art
                 }
             }
             .buttonStyle(PlainButtonStyle())
