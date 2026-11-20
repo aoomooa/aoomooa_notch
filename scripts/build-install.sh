@@ -21,11 +21,11 @@ set -euo pipefail
 #          想彻底根治需要付费开发者账号（Developer ID）。
 TEAM_ID="${TEAM_ID:-}"
 # 没填就自动从钥匙串里的「Apple Development」证书读 Team ID（证书的“组织单位 OU”）
-if [[ -z "$TEAM_ID" ]]; then
+if [[ -z "${TEAM_ID}" ]]; then
   TEAM_ID="$(security find-certificate -a -c "Apple Development" -p 2>/dev/null \
     | openssl x509 -noout -subject 2>/dev/null \
     | sed -n 's/.*OU *= *\([A-Z0-9]\{10\}\).*/\1/p' | head -1 || true)"
-  if [[ -n "$TEAM_ID" ]]; then echo "ℹ︎ 自动找到开发证书的 Team ID：$TEAM_ID"; fi
+  if [[ -n "${TEAM_ID}" ]]; then echo "ℹ︎ 自动找到开发证书的 Team ID：${TEAM_ID}"; fi
 fi
 # SCHEME：Xcode 里的 scheme 名，一般不用改
 SCHEME="${SCHEME:-boringNotch}"
@@ -37,94 +37,106 @@ BUNDLE_ID="${BUNDLE_ID:-com.aoomooa.notch}"
 # ─────────────────────────────────────────────────────────────────────────
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PROJECT="$ROOT/boringNotch.xcodeproj"
-DERIVED="$ROOT/.build"
-DEST="/Applications/$APP_NAME.app"
+PROJECT="${ROOT}/boringNotch.xcodeproj"
+DERIVED="${ROOT}/.build"
+DEST="/Applications/${APP_NAME}.app"
 
-cd "$ROOT"
+cd "${ROOT}"
 
 if [[ -n "${ICON:-}" ]]; then
-  echo "▶ 生成 App 图标：$ICON"
+  echo "▶ 生成 App 图标：${ICON}"
   if [[ -n "${ICON_BG:-}" ]]; then
-    swift "$ROOT/scripts/make-appicon.swift" "$ICON" "$ICON_BG"
+    swift "${ROOT}/scripts/make-appicon.swift" "${ICON}" "${ICON_BG}"
   else
-    swift "$ROOT/scripts/make-appicon.swift" "$ICON"
+    swift "${ROOT}/scripts/make-appicon.swift" "${ICON}"
   fi
 fi
 
-if [[ -n "$TEAM_ID" ]]; then
-  echo "▶ 使用 Team $TEAM_ID 签名（Apple Development）"
-  SIGN_ARGS=(DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic
+if [[ -n "${TEAM_ID}" ]]; then
+  echo "▶ 使用 Team ${TEAM_ID} 签名（Apple Development）"
+  SIGN_ARGS=(DEVELOPMENT_TEAM="${TEAM_ID}" CODE_SIGN_STYLE=Automatic
              CODE_SIGN_IDENTITY="Apple Development" "CODE_SIGN_IDENTITY[sdk=macosx*]=Apple Development"
              -allowProvisioningUpdates)
 else
   echo "▶ 未设置 TEAM_ID：使用本地临时签名（辅助功能权限每次编译后需要重新授权）"
-  SIGN_ARGS=(CODE_SIGN_IDENTITY="-" "CODE_SIGN_IDENTITY[sdk=macosx*]=-" DEVELOPMENT_TEAM="")
+  # 编译时先不签名（新版 Xcode 的自动签名没有 Team 会直接报错），编译完再统一做临时签名
+  SIGN_ARGS=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="")
 fi
 
 echo "▶ Release 编译中（第一次会下载依赖，需要几分钟）…"
-mkdir -p "$DERIVED"
-LOG="$DERIVED/xcodebuild.log"
+mkdir -p "${DERIVED}"
+LOG="${DERIVED}/xcodebuild.log"
 set +e
 xcodebuild \
-  -project "$PROJECT" \
-  -scheme "$SCHEME" \
+  -project "${PROJECT}" \
+  -scheme "${SCHEME}" \
   -configuration Release \
-  -derivedDataPath "$DERIVED" \
+  -derivedDataPath "${DERIVED}" \
   -skipMacroValidation -skipPackagePluginValidation \
   "${SIGN_ARGS[@]}" \
-  build > "$LOG" 2>&1
+  build > "${LOG}" 2>&1
 STATUS=$?
 set -e
-grep -E "error:" "$LOG" | head -30 || true
-if [[ $STATUS -ne 0 ]]; then
-  echo "✗ 编译失败（完整日志：$LOG）。把上面的 error 行发给 Claude。" >&2
+grep -E "error:" "${LOG}" | head -30 || true
+if [[ ${STATUS} -ne 0 ]]; then
+  echo "✗ 编译失败（完整日志：${LOG}）。把上面的 error 行发给 Claude。" >&2
   exit 1
 fi
 echo "✓ BUILD SUCCEEDED"
 
-BUILT="$DERIVED/Build/Products/Release/Boring Notch.app"
-if [[ ! -d "$BUILT" ]]; then
-  BUILT="$(find "$DERIVED/Build/Products/Release" -maxdepth 1 -name "*.app" -print -quit)"
+BUILT="${DERIVED}/Build/Products/Release/Boring Notch.app"
+if [[ ! -d "${BUILT}" ]]; then
+  BUILT="$(find "${DERIVED}/Build/Products/Release" -maxdepth 1 -name "*.app" -print -quit)"
 fi
-if [[ -z "$BUILT" || ! -d "$BUILT" ]]; then
-  echo "✗ 没找到编译产物（日志：$LOG）。" >&2
+if [[ -z "${BUILT}" || ! -d "${BUILT}" ]]; then
+  echo "✗ 没找到编译产物（日志：${LOG}）。" >&2
   exit 1
 fi
 
-ACTUAL_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$BUILT/Contents/Info.plist")"
-if [[ "$ACTUAL_ID" != "$BUNDLE_ID" ]]; then
-  echo "✗ 编译出来的 Bundle ID 是 $ACTUAL_ID，和脚本里的 $BUNDLE_ID 不一致，先把两边改成一样。" >&2
+ACTUAL_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${BUILT}/Contents/Info.plist")"
+if [[ "${ACTUAL_ID}" != "${BUNDLE_ID}" ]]; then
+  echo "✗ 编译出来的 Bundle ID 是 ${ACTUAL_ID}，和脚本里的 ${BUNDLE_ID} 不一致，先把两边改成一样。" >&2
   exit 1
+fi
+
+if [[ -z "${TEAM_ID}" ]]; then
+  echo "▶ 临时签名（ad-hoc）…"
+  ENT_SRC="${ROOT}/boringNotch/boringNotch.entitlements"
+  ENT_TMP="$(mktemp -t aoomooa-entitlements).plist"
+  sed "s/\$(PRODUCT_BUNDLE_IDENTIFIER)/${BUNDLE_ID}/g" "$ENT_SRC" > "$ENT_TMP"
+  # 先签里面的框架和 XPC 助手，再带上权限文件签 App 本身
+  codesign --force --deep --sign - "${BUILT}" >/dev/null 2>&1
+  codesign --force --sign - --entitlements "$ENT_TMP" "${BUILT}"
+  rm -f "$ENT_TMP"
 fi
 
 echo "▶ 退出正在运行的旧版本…"
-osascript -e "tell application id \"$BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
+osascript -e "tell application id \"${BUNDLE_ID}\" to quit" >/dev/null 2>&1 || true
 osascript -e 'tell application id "theboringteam.boringnotch" to quit' >/dev/null 2>&1 || true
 for _ in {1..20}; do
-  pgrep -f "$DEST/Contents/MacOS/" >/dev/null || break
+  pgrep -f "${DEST}/Contents/MacOS/" >/dev/null || break
   sleep 0.25
 done
 
-echo "▶ 安装到 $DEST"
-rm -rf "$DEST"
-ditto "$BUILT" "$DEST"
+echo "▶ 安装到 ${DEST}"
+rm -rf "${DEST}"
+ditto "${BUILT}" "${DEST}"
 
 # 让 Finder / 启动台 / 程序坞马上用新图标（不然可能还显示缓存里的旧图标）
-touch "$DEST"
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$DEST" >/dev/null 2>&1 || true
+touch "${DEST}"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "${DEST}" >/dev/null 2>&1 || true
 
 echo "▶ 签名信息："
-codesign -dv "$DEST" 2>&1 | grep -E "Identifier|TeamIdentifier|Signature" || true
-if codesign -dv "$DEST" 2>&1 | grep -q "Signature=adhoc"; then
+codesign -dv "${DEST}" 2>&1 | grep -E "Identifier|TeamIdentifier|Signature" || true
+if codesign -dv "${DEST}" 2>&1 | grep -q "Signature=adhoc"; then
   echo "⚠︎ 现在是临时签名（ad-hoc）：每次重新编译后，辅助功能权限都要重新勾一次。"
   echo "  解决：Xcode → 设置 → 账户 登录 Apple ID 并创建「Apple Development」证书，再运行本脚本。"
 fi
 
-echo "▶ 启动 $DEST"
-open "$DEST"
+echo "▶ 启动 ${DEST}"
+open "${DEST}"
 
 if [[ -d "/Applications/Boring Notch.app" ]]; then
   echo "ℹ︎ 发现旧的 /Applications/Boring Notch.app，确认新版本没问题后可以手动删掉它。"
 fi
-echo "✓ 完成。第一次安装请在 系统设置 → 隐私与安全性 → 辅助功能 里打开「$APP_NAME」。"
+echo "✓ 完成。第一次安装请在 系统设置 → 隐私与安全性 → 辅助功能 里打开「${APP_NAME}」。"
