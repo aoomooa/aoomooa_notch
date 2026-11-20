@@ -37,7 +37,7 @@ struct BoringHeader: View {
                     }
             }
 
-            HStack(spacing: 4) {
+            HStack(spacing: DS.Space.xs) {
                 if vm.notchState == .open {
                     if isHUDType(coordinator.sneakPeek.type) && coordinator.sneakPeek.show && Defaults[.showOpenNotchHUD] {
                         OpenNotchHUD(type: $coordinator.sneakPeek.type, value: $coordinator.sneakPeek.value, icon: $coordinator.sneakPeek.icon)

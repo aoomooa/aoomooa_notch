@@ -16,7 +16,7 @@ struct ShelfView: View {
     private let spacing: CGFloat = 8
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: DS.Space.m) {
             FileShareView()
                 .aspectRatio(1, contentMode: .fit)
                 .environmentObject(vm)
@@ -62,7 +62,7 @@ struct ShelfView: View {
         RoundedRectangle(cornerRadius: DS.Radius.panel, style: .continuous)
             .stroke(
                 vm.dragDetectorTargeting
-                    ? DS.Colors.accent.opacity(0.9)
+                    ? DS.Colors.accent
                     : DS.Colors.separator,
                 style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [10])
             )

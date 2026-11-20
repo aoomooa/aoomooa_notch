@@ -43,13 +43,13 @@ struct FileShareView: View {
         ZStack {
             RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .fill(
-                    LinearGradient(colors: [Color.black.opacity(0.35), Color.black.opacity(0.20)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    DS.Colors.fill
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .stroke(
                             vm.dropZoneTargeting
-                                ? DS.Colors.accent.opacity(0.9)
+                                ? DS.Colors.accent
                                 : DS.Colors.separator,
                             style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [10])
                         )
@@ -60,9 +60,7 @@ struct FileShareView: View {
             VStack(spacing: DS.Space.xs) {
                 ZStack {
                     Circle()
-                        .fill(Color.white.opacity(
-                            vm.dropZoneTargeting ? 0.11 : 0.09
-                        ))
+                        .fill(vm.dropZoneTargeting ? DS.Colors.fillHover : DS.Colors.fill)
                         .frame(width: 55, height: 55)
                     Image(systemName: "square.and.arrow.up")
                     Group {
@@ -94,7 +92,7 @@ struct FileShareView: View {
             // Loading overlay
             if isProcessing || quickShare.isPickerOpen {
                 RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                    .fill(.black.opacity(0.3))
+                    .fill(DS.Colors.overlay)
                     .overlay(
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle(tint: .white))

@@ -32,13 +32,13 @@ struct ShelfItemView: View {
     var body: some View {
         ZStack {
             if !shouldHideDuringDrag {
-                VStack(alignment: .center, spacing: 2) {
+                VStack(alignment: .center, spacing: DS.Space.xs) {
                     iconView
                     textView
                 }
                 .frame(width: 105)
-                .padding(.vertical, 10)
-                .padding(.horizontal, 5)
+                .padding(.vertical, DS.Space.s)
+                .padding(.horizontal, DS.Space.xs)
                 .background(backgroundView)
                 .contentShape(Rectangle())
                 .animation(.easeInOut(duration: 0.1), value: debouncedDropTarget)
@@ -59,8 +59,8 @@ struct ShelfItemView: View {
             } else {
                 Color.clear
                     .frame(width: 105)
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 5)
+                    .padding(.vertical, DS.Space.s)
+                    .padding(.horizontal, DS.Space.xs)
             }
         }
         .onChange(of: viewModel.isDropTargeted) { _, targeted in
@@ -127,9 +127,9 @@ struct ShelfItemView: View {
 
     private var backgroundColor: Color {
         if debouncedDropTarget {
-            return DS.Colors.accent.opacity(0.25)
+            return DS.Colors.accentSoft
         } else if isSelected {
-            return DS.Colors.accent.opacity(0.15)
+            return DS.Colors.accentSoft
         } else {
             return Color.clear
         }
@@ -137,9 +137,9 @@ struct ShelfItemView: View {
 
     private var strokeColor: Color {
         if debouncedDropTarget {
-            return DS.Colors.accent.opacity(0.9)
+            return DS.Colors.accent
         } else if isSelected {
-            return DS.Colors.accent.opacity(0.8)
+            return DS.Colors.accent
         } else {
             return Color.clear
         }
