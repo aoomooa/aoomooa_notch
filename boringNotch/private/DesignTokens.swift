@@ -153,5 +153,10 @@ enum DS {
         static let eventBar: CGFloat = 3
         /// 列表行里图标的高度
         static let rowIcon: CGFloat = 14
+        /// 计时器：圆环直径、收起时左右两侧的宽度
+        static let timerRing: CGFloat = 72
+        static let timerSide: CGFloat = 44
+        /// 加减号小按钮
+        static let stepButton: CGFloat = 20
     }
 }

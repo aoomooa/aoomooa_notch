@@ -33,6 +33,8 @@ struct ContentView: View {
     @State private var swipeCooldownUntil = Date.distantPast
     @State private var hoverProgress: CGFloat = 0           // aoomooa: streamline sweep 0…1
     @AppStorage(AoomooaPrefs.Key.tintStrength) private var tintStrength = AoomooaPrefs.Default.tintStrength  // aoomooa
+    @AppStorage(AoomooaPrefs.Key.timerShowWhenClosed) private var timerShowWhenClosed = AoomooaPrefs.Default.timerShowWhenClosed  // aoomooa
+    @ObservedObject private var notchTimer = NotchTimerModel.shared   // aoomooa
     @State private var anyDropDebounceTask: Task<Void, Never>?
 
     @State private var gestureProgress: CGFloat = .zero
@@ -328,6 +330,11 @@ struct ContentView: View {
                       } else if coordinator.sneakPeek.show && Defaults[.inlineHUD] && (coordinator.sneakPeek.type != .music) && (coordinator.sneakPeek.type != .battery) && vm.notchState == .closed {
                           InlineHUD(type: $coordinator.sneakPeek.type, value: $coordinator.sneakPeek.value, icon: $coordinator.sneakPeek.icon, hoverAnimation: $isHovering, gestureProgress: $gestureProgress)
                               .transition(.opacity)
+                      } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
+                                    && notchTimer.showsOnClosedNotch(showWhileRunning: timerShowWhenClosed) {
+                          // aoomooa: 计时器 — 左边 ⏱，右边 mm:ss（时间到时显示“时间到”）
+                          AoomooaTimerLiveActivity(height: vm.effectiveClosedNotchHeight,
+                                                   middleWidth: vm.closedNotchSize.width - cornerRadiusInsets.closed.top)
                       } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music) && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle) && coordinator.musicLiveActivityEnabled && !vm.hideOnClosed {
                           MusicLiveActivity()
                               .frame(alignment: .center)
@@ -397,6 +404,9 @@ struct ContentView: View {
                             .transition(pageTransition)
                     case .apps:
                         NotchLauncherView()
+                            .transition(pageTransition)
+                    case .timer:
+                        NotchTimerView()   // aoomooa: ⏱ 计时器
                             .transition(pageTransition)
                     }
                 }

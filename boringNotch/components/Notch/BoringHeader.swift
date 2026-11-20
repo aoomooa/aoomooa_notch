@@ -13,6 +13,7 @@ struct BoringHeader: View {
     @ObservedObject var batteryModel = BatteryStatusViewModel.shared
     @ObservedObject var coordinator = BoringViewCoordinator.shared
     @StateObject var tvm = ShelfStateViewModel.shared
+    @ObservedObject var notchTimer = NotchTimerModel.shared   // aoomooa
     var body: some View {
         HStack(spacing: 0) {
             HStack {
@@ -58,6 +59,24 @@ struct BoringHeader: View {
                             }
                             .buttonStyle(PlainButtonStyle())
                         }
+                        // aoomooa: ⏱ 计时器按钮（计时中显示强调色）
+                        Button(action: {
+                            withAnimation(DS.Motion.page) {
+                                coordinator.currentView = coordinator.currentView == .timer ? .home : .timer
+                            }
+                        }) {
+                            Capsule()
+                                .fill(coordinator.currentView == .timer ? DS.Colors.fillHover : DS.Colors.background)
+                                .frame(width: DS.Size.control, height: DS.Size.control)
+                                .overlay {
+                                    Image(systemName: "timer")
+                                        .foregroundColor(notchTimer.phase == .idle
+                                                         ? (coordinator.currentView == .timer ? DS.Colors.textPrimary : DS.Colors.textSecondary)
+                                                         : DS.Colors.accent)
+                                        .imageScale(.medium)
+                                }
+                        }
+                        .buttonStyle(PlainButtonStyle())
                         // aoomooa: Tray button, left of the settings gear
                         Button(action: {
                             withAnimation(DS.Motion.page) {

@@ -29,6 +29,7 @@ public enum NotchViews {
     case shelf
     case reminders
     case apps
+    case timer   // aoomooa: ⏱ 计时器
 }
 
 enum SettingsEnum {
