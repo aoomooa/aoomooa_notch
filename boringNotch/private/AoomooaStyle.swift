@@ -5,8 +5,8 @@
 import SwiftUI
 
 enum AoomooaStyle {
-    /// Pages reachable with a two-finger left/right swipe, in order
-    static let swipeOrder: [NotchViews] = [.home, .reminders, .shelf]
+    /// 双指左右滑能到的页面，顺序和顶栏图标从左到右一致：首页 · 工作台 · 天气+计时器 · 托盘
+    static let swipeOrder: [NotchViews] = [.home, .reminders, .timer, .shelf]
 
     /// 展开后背景取封面颜色的强度（设置里 0–100%）
     static var tintStrength: Double { AoomooaPrefs.tintStrength }
@@ -105,4 +105,6 @@ struct AoomooaOutlineStreak: View {
 @MainActor
 enum AoomooaGestureGate {
     static var horizontalScrollerHovered = false
+    /// 鼠标在上下滚动的控件上（比如分钟滚轮）：上滑不收起刘海
+    static var verticalScrollerHovered = false
 }

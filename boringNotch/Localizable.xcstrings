@@ -901,6 +901,9 @@
         }
       }
     },
+    "%lld 分钟计时结束了" : {
+
+    },
     "%lld%%" : {
       "localizations" : {
         "ar" : {
@@ -7807,6 +7810,7 @@
       }
     },
     "Drop files here" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -11109,6 +11113,7 @@
       }
     },
     "High" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -11209,6 +11214,7 @@
       }
     },
     "Hover delay" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -11909,6 +11915,17 @@
         }
       }
     },
+    "Launch at login" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录时启动"
+          }
+        }
+      }
+    },
     "Layout Preview" : {
       "localizations" : {
         "ar" : {
@@ -12110,6 +12127,7 @@
       }
     },
     "Low" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -13510,6 +13528,7 @@
       }
     },
     "Medium" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -13610,6 +13629,7 @@
       }
     },
     "Mic %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -16206,6 +16226,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选取颜色"
+          }
+        }
+      }
+    },
+    "Player tinting" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放器封面取色"
           }
         }
       }
@@ -22316,6 +22347,7 @@
       }
     },
     "Use your macOS system accent color" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -23615,6 +23647,18 @@
         }
       }
     },
+    "上移" : {
+
+    },
+    "下移" : {
+
+    },
+    "不是 %@，辅助功能权限可能反复失效" : {
+
+    },
+    "中" : {
+
+    },
     "从刘海移除" : {
       "localizations" : {
         "zh-Hans" : {
@@ -23624,6 +23668,66 @@
           }
         }
       }
+    },
+    "低" : {
+
+    },
+    "使用 aoomooa 默认红色" : {
+
+    },
+    "分钟" : {
+
+    },
+    "删除" : {
+
+    },
+    "取消" : {
+
+    },
+    "取色强度 0% 是纯黑；动画速度同时影响展开、收起、切页和所有小动画。" : {
+
+    },
+    "只会结束“父进程已经退出”的 mediaremote-adapter.pl，不会影响正在运行的其它 App。" : {
+
+    },
+    "名称" : {
+
+    },
+    "名称（可不填）" : {
+
+    },
+    "后台子进程" : {
+
+    },
+    "在「aoomooa」页调整" : {
+
+    },
+    "在刘海首页右键网站，也可以更换图标、添加或移除。" : {
+
+    },
+    "外观" : {
+
+    },
+    "安装路径" : {
+
+    },
+    "已授权" : {
+
+    },
+    "已暂停" : {
+
+    },
+    "常用网站" : {
+
+    },
+    "常用网站不会被清空（它有自己的“恢复默认网站”）。" : {
+
+    },
+    "应用标识" : {
+
+    },
+    "快" : {
+
     },
     "恢复网站自带图标" : {
       "localizations" : {
@@ -23635,6 +23739,30 @@
         }
       }
     },
+    "恢复默认" : {
+
+    },
+    "恢复默认网站" : {
+
+    },
+    "恢复默认设置…" : {
+
+    },
+    "悬停延迟" : {
+
+    },
+    "悬停时先立刻显示音乐，再等上面这段时间展开；流光走完一圈的时间也一样。" : {
+
+    },
+    "慢" : {
+
+    },
+    "手势" : {
+
+    },
+    "打开“辅助功能”设置" : {
+
+    },
     "打开系统设置" : {
       "localizations" : {
         "zh-Hans" : {
@@ -23645,6 +23773,18 @@
         }
       }
     },
+    "把手势、外观和计时器恢复成默认值？" : {
+
+    },
+    "把文件拖到这里" : {
+
+    },
+    "收起时在刘海上显示倒计时" : {
+
+    },
+    "时间到" : {
+
+    },
     "更换图标…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -23654,6 +23794,12 @@
           }
         }
       }
+    },
+    "未授权" : {
+
+    },
+    "检查中…" : {
+
     },
     "没有在播放" : {
       "localizations" : {
@@ -23675,6 +23821,9 @@
         }
       }
     },
+    "添加" : {
+
+    },
     "添加 App…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -23695,6 +23844,18 @@
         }
       }
     },
+    "清理中…" : {
+
+    },
+    "清理残留后台进程" : {
+
+    },
+    "灵敏" : {
+
+    },
+    "点刘海顶栏的 ⏱ 选 5 / 10 / 15 / 25 分钟或自定义；“自定义”默认填上面的时长。" : {
+
+    },
     "移除" : {
       "localizations" : {
         "zh-Hans" : {
@@ -23704,6 +23865,18 @@
           }
         }
       }
+    },
+    "签名" : {
+
+    },
+    "网址" : {
+
+    },
+    "网址，比如 aoomooa.art" : {
+
+    },
+    "网址无效，或者已经在列表里了" : {
+
     },
     "网络" : {
       "localizations" : {
@@ -23715,25 +23888,38 @@
         }
       }
     },
-    "Launch at login" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登录时启动"
-          }
-        }
-      }
+    "自定义" : {
+
     },
-    "Player tinting" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放器封面取色"
-          }
-        }
-      }
+    "计时中 · %lld 分钟" : {
+
+    },
+    "计时器" : {
+
+    },
+    "诊断" : {
+
+    },
+    "辅助功能权限" : {
+
+    },
+    "迟钝" : {
+
+    },
+    "重新检查" : {
+
+    },
+    "静音" : {
+
+    },
+    "高" : {
+
+    },
+    "麦克风已打开" : {
+
+    },
+    "麦克风已静音" : {
+
     }
   },
   "version" : "1.0"

@@ -1,7 +1,7 @@
 //
 //  AoomooaTimer.swift — 计时器第一版
 //
-//  · 顶栏 ⏱ 打开计时器页：5 / 10 / 15 / 25 分钟或自定义
+//  · 顶栏 ⏱ 或双指左右滑到「天气 + 计时器」页：5 / 10 / 15 / 25 分钟，或用滚轮自定义 1–60 分钟
 //  · 收起后刘海两侧显示 ⏱ 和 mm:ss（设置 → aoomooa 可关）
 //  · 到点响一声，刘海显示“时间到”，可以“再来一次”
 //  · 以后加番茄钟：作为新的“预设模式”放在 presetMinutes 旁边，不改这里的流程
@@ -151,86 +151,98 @@ final class NotchTimerModel: ObservableObject {
     }
 }
 
-// MARK: - 展开后的计时器页
+// MARK: - 展开后的页面：左边天气 · 右边计时器
 
 struct NotchTimerView: View {
     @ObservedObject private var timer = NotchTimerModel.shared
+    @ObservedObject private var weather = WeatherModel.shared
 
+    /// 左边天气占的宽度比例
+    private static let weatherShare: CGFloat = 0.34
     /// 时间的刷新间隔（秒）
     private static let tick: TimeInterval = 1
 
     var body: some View {
-        Group {
-            switch timer.phase {
-            case .idle: picker
-            case .running, .paused: running
-            case .finished: finished
+        GeometryReader { g in
+            HStack(alignment: .top, spacing: DS.Space.m) {
+                column("天气", "cloud.sun") {
+                    AoomooaWeatherCard()
+                }
+                .frame(width: (g.size.width - DS.Space.m) * Self.weatherShare)
+
+                column("计时器", "timer") {
+                    Group {
+                        switch timer.phase {
+                        case .idle: picker
+                        case .running, .paused: card { running }
+                        case .finished: card { finished }
+                        }
+                    }
+                    .transition(.opacity)
+                }
+                .frame(maxWidth: .infinity)
             }
         }
         .padding(.horizontal, DS.Space.m)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.bottom, DS.Space.xs)
         .animation(DS.Motion.micro, value: timer.phase)
+        .onAppear { weather.refreshIfStale() }
     }
 
-    // 选时长
-    private var picker: some View {
+    /// 一栏：小标题 + 撑满剩余高度的内容（左右两栏标题同高，内容上下对齐）
+    private func column<Content: View>(_ title: String, _ icon: String,
+                                       @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.s) {
-            sectionHeader("计时器", "timer")
-            HStack(spacing: DS.Space.s) {
-                ForEach(NotchTimerModel.presetMinutes, id: \.self) { minutes in
-                    TimerPresetTile(minutes: minutes) { timer.start(minutes: minutes) }
-                }
-                customTile
+            HStack(spacing: DS.Space.xs) {
+                Image(systemName: icon)
+                Text(title)
             }
+            .font(DS.Fonts.caption(.semibold))
+            .foregroundStyle(DS.Colors.textSecondary)
+
+            content()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .padding(.horizontal, DS.Space.m)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Colors.fill))
+    }
+
+    // 选时长：四个快捷时长 + 自定义滚轮
+    private var picker: some View {
+        HStack(spacing: DS.Space.s) {
+            ForEach(NotchTimerModel.presetMinutes, id: \.self) { minutes in
+                TimerPresetTile(minutes: minutes) { timer.start(minutes: minutes) }
+            }
+            customTile
         }
         .onAppear { timer.customMinutes = AoomooaPrefs.timerMinutes }
     }
 
     private var customTile: some View {
         VStack(spacing: DS.Space.xs) {
-            Text("自定义")
-                .font(DS.Fonts.caption)
-                .foregroundStyle(DS.Colors.textSecondary)
-            HStack(spacing: DS.Space.xs) {
-                stepButton("minus") { changeCustom(by: -1) }
-                Text("\(timer.customMinutes)")
-                    .font(DS.Fonts.title)
-                    .monospacedDigit()
-                    .foregroundStyle(DS.Colors.textPrimary)
-                    .contentTransition(.numericText())
-                stepButton("plus") { changeCustom(by: 1) }
-            }
+            AoomooaMinuteWheel(value: $timer.customMinutes,
+                               range: AoomooaPrefs.Limits.timerMinutes,
+                               suffix: "分钟")
+                .frame(maxHeight: .infinity)
             AoomooaPillButton(title: "开始", icon: "play.fill", prominent: true) {
                 timer.start(minutes: timer.customMinutes)
             }
         }
         .padding(DS.Space.s)
-        .frame(maxWidth: .infinity)
+        .frame(width: DS.Size.wheelTile)
+        .frame(maxHeight: .infinity)
         .background(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Colors.fill))
-    }
-
-    private func changeCustom(by delta: Int) {
-        let limits = AoomooaPrefs.Limits.timerMinutes
-        withAnimation(DS.Motion.micro) {
-            timer.customMinutes = min(max(timer.customMinutes + delta, limits.lowerBound), limits.upperBound)
-        }
-    }
-
-    private func stepButton(_ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(DS.Fonts.caption(.semibold))
-                .foregroundStyle(DS.Colors.textSecondary)
-                .frame(width: DS.Size.stepButton, height: DS.Size.stepButton)
-                .background(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).fill(DS.Colors.fill))
-        }
-        .buttonStyle(.plain)
     }
 
     // 计时中 / 暂停
     private var running: some View {
         TimelineView(.periodic(from: .now, by: Self.tick)) { context in
-            HStack(spacing: DS.Space.l) {
+            HStack(spacing: DS.Space.m) {
                 ZStack {
                     Circle()
                         .stroke(DS.Colors.separator, lineWidth: DS.Size.bar)
@@ -264,13 +276,12 @@ struct NotchTimerView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .frame(maxHeight: .infinity)
         }
     }
 
     // 时间到
     private var finished: some View {
-        HStack(spacing: DS.Space.l) {
+        HStack(spacing: DS.Space.m) {
             Image(systemName: "bell.fill")
                 .font(DS.Fonts.title)
                 .foregroundStyle(DS.Colors.accent)
@@ -283,19 +294,11 @@ struct NotchTimerView: View {
                     .foregroundStyle(DS.Colors.textSecondary)
             }
             Spacer(minLength: DS.Space.s)
-            AoomooaPillButton(title: "再来一次", icon: "arrow.clockwise", prominent: true) { timer.again() }
-            AoomooaPillButton(title: "完成", icon: "checkmark") { timer.cancel() }
+            VStack(alignment: .trailing, spacing: DS.Space.s) {
+                AoomooaPillButton(title: "再来一次", icon: "arrow.clockwise", prominent: true) { timer.again() }
+                AoomooaPillButton(title: "完成", icon: "checkmark") { timer.cancel() }
+            }
         }
-        .frame(maxHeight: .infinity)
-    }
-
-    private func sectionHeader(_ text: String, _ icon: String) -> some View {
-        HStack(spacing: DS.Space.xs) {
-            Image(systemName: icon)
-            Text(text)
-        }
-        .font(DS.Fonts.caption(.semibold))
-        .foregroundStyle(DS.Colors.textSecondary)
     }
 }
 

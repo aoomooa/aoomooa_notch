@@ -156,7 +156,8 @@ enum DS {
         /// 计时器：圆环直径、收起时左右两侧的宽度
         static let timerRing: CGFloat = 72
         static let timerSide: CGFloat = 44
-        /// 加减号小按钮
-        static let stepButton: CGFloat = 20
+        /// 分钟滚轮：每行高度、所在卡片的宽度
+        static let wheelRow: CGFloat = 22
+        static let wheelTile: CGFloat = 100
     }
 }

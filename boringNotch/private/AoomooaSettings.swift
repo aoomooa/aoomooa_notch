@@ -15,8 +15,10 @@ struct AoomooaSettingsView: View {
     @AppStorage(AoomooaPrefs.Key.animationSpeed) private var animationSpeed = AoomooaPrefs.Default.animationSpeed
     @AppStorage(AoomooaPrefs.Key.timerMinutes) private var timerMinutes = AoomooaPrefs.Default.timerMinutes
     @AppStorage(AoomooaPrefs.Key.timerShowWhenClosed) private var timerShowWhenClosed = AoomooaPrefs.Default.timerShowWhenClosed
+    @AppStorage(AoomooaPrefs.Key.weatherCity) private var weatherCity = AoomooaPrefs.Default.weatherCity
 
     @ObservedObject private var sites = FavouriteSitesModel.shared
+    @ObservedObject private var weather = WeatherModel.shared
     @State private var newSiteTitle = ""
     @State private var newSiteAddress = ""
     @State private var addFailed = false
@@ -35,6 +37,7 @@ struct AoomooaSettingsView: View {
             appearanceSection
             sitesSection
             timerSection
+            weatherSection
             diagnosticsSection
             resetSection
         }
@@ -163,7 +166,35 @@ struct AoomooaSettingsView: View {
         } header: {
             Text("计时器")
         } footer: {
-            Text("点刘海顶栏的 ⏱ 选 5 / 10 / 15 / 25 分钟或自定义；“自定义”默认填上面的时长。")
+            Text("点顶栏的 ⏱ 或双指左右滑到计时器页，选 5 / 10 / 15 / 25 分钟，或用滚轮选 1–60 分钟；滚轮默认停在上面的时长。")
+                .font(DS.Fonts.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: 天气
+
+    private var weatherSection: some View {
+        Section {
+            LabeledContent("城市") {
+                TextField("城市", text: $weatherCity, prompt: Text("留空 = 按网络位置自动判断"))
+                    .labelsHidden()
+                    .multilineTextAlignment(.trailing)
+                    .onSubmit { weather.refresh() }
+            }
+            HStack {
+                Button(weather.isLoading ? "刷新中…" : "立即刷新") { weather.refresh() }
+                    .disabled(weather.isLoading)
+                if let s = weather.snapshot {
+                    Text("上次：\(s.city) \(s.temperature)° \(s.condition)")
+                        .font(DS.Fonts.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("天气")
+        } footer: {
+            Text("数据来自 wttr.in，每 30 分钟更新一次。开着代理时自动定位可能不准，填上城市名（比如 Münster）就好。")
                 .font(DS.Fonts.caption)
                 .foregroundStyle(.secondary)
         }
@@ -243,7 +274,7 @@ struct AoomooaSettingsView: View {
     private var resetSection: some View {
         Section {
             Button("恢复默认设置…") { confirmReset = true }
-                .confirmationDialog("把手势、外观和计时器恢复成默认值？", isPresented: $confirmReset) {
+                .confirmationDialog("把手势、外观、计时器和天气城市恢复成默认值？", isPresented: $confirmReset) {
                     Button("恢复默认", role: .destructive, action: resetPrefs)
                     Button("取消", role: .cancel) {}
                 } message: {
@@ -259,6 +290,7 @@ struct AoomooaSettingsView: View {
         animationSpeed = AoomooaPrefs.Default.animationSpeed
         timerMinutes = AoomooaPrefs.Default.timerMinutes
         timerShowWhenClosed = AoomooaPrefs.Default.timerShowWhenClosed
+        weatherCity = AoomooaPrefs.Default.weatherCity
     }
 
     private func valueRow(_ title: String, _ value: String) -> some View {

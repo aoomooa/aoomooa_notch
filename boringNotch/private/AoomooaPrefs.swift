@@ -16,6 +16,7 @@ enum AoomooaPrefs {
         static let animationSpeed = "aoomooa.animationSpeed"
         static let timerMinutes = "aoomooa.timerDefaultMinutes"
         static let timerShowWhenClosed = "aoomooa.timerShowWhenClosed"
+        static let weatherCity = "aoomooa.weatherCity"
     }
 
     enum Default {
@@ -31,6 +32,8 @@ enum AoomooaPrefs {
         static let timerMinutes: Int = 25
         /// 收起时在刘海上显示倒计时
         static let timerShowWhenClosed: Bool = true
+        /// 天气城市，空 = 按网络位置自动判断
+        static let weatherCity: String = ""
     }
 
     enum Limits {
@@ -38,7 +41,7 @@ enum AoomooaPrefs {
         static let swipeSensitivity: ClosedRange<Double> = 0...1
         static let tintStrength: ClosedRange<Double> = 0...1
         static let animationSpeed: ClosedRange<Double> = 0.5...2.0
-        static let timerMinutes: ClosedRange<Int> = 1...180
+        static let timerMinutes: ClosedRange<Int> = 1...60
         /// 灵敏度 0 → 需要滑 180pt，灵敏度 1 → 60pt
         static let swipeDistance: ClosedRange<Double> = 60...180
     }
@@ -57,6 +60,11 @@ enum AoomooaPrefs {
         (UserDefaults.standard.object(forKey: Key.timerShowWhenClosed) as? Bool) ?? Default.timerShowWhenClosed
     }
 
+    static var weatherCity: String {
+        (UserDefaults.standard.string(forKey: Key.weatherCity) ?? Default.weatherCity)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// 左右滑切页需要滑过的距离（pt）
     static var tabSwipeDistance: CGFloat {
         let r = Limits.swipeDistance
@@ -67,7 +75,7 @@ enum AoomooaPrefs {
     static func resetAll() {
         let d = UserDefaults.standard
         for key in [Key.hoverDelay, Key.swipeSensitivity, Key.tintStrength,
-                    Key.animationSpeed, Key.timerMinutes, Key.timerShowWhenClosed] {
+                    Key.animationSpeed, Key.timerMinutes, Key.timerShowWhenClosed, Key.weatherCity] {
             d.removeObject(forKey: key)
         }
     }

@@ -747,7 +747,8 @@ struct ContentView: View {
             }
             return
         }
-        guard vm.notchState == .open && !vm.isHoveringCalendar else { return }
+        guard vm.notchState == .open && !vm.isHoveringCalendar,
+              !AoomooaGestureGate.verticalScrollerHovered else { return }   // aoomooa: 滚轮上滑不收起
 
         withAnimation(animationSpring) {
             gestureProgress = (translation / Defaults[.gestureSensitivity]) * -20
