@@ -328,7 +328,7 @@ enum AoomooaDiagnostics {
 
     static let accessibilityExplanation = """
     替换系统音量 / 亮度浮窗需要“辅助功能”权限。macOS 把这个权限记在「应用标识 + 签名」上：\
-    用 scripts/build-install.sh 安装到 /Applications/aoomooa.app、并用固定的 Apple 开发证书签名，重新编译后就不用再授权。\
+    用 scripts/build-install.sh 安装到 /Applications/aoomooa🉐刘海屏.app、并用固定的 Apple 开发证书签名，重新编译后就不用再授权。\
     如果是临时签名（ad-hoc），每次编译签名都会变，需要在 系统设置 → 隐私与安全性 → 辅助功能 里删掉旧的 aoomooa 再重新勾选。
     """
 

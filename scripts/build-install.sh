@@ -120,7 +120,7 @@ done
 
 echo "▶ 安装到 ${DEST}"
 # 旧名字的安装位置一起清掉
-[[ "${DEST}" != "/Applications/aoomooa.app" ]] && rm -rf "/Applications/aoomooa.app"
+if [[ "${DEST}" != "/Applications/aoomooa.app" ]]; then rm -rf "/Applications/aoomooa.app"; fi
 rm -rf "${DEST}"
 ditto "${BUILT}" "${DEST}"
 
