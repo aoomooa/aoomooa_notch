@@ -20,5 +20,8 @@ import Foundation
     func isScreenBrightnessAvailable(with reply: @escaping (Bool) -> Void)
     func currentScreenBrightness(with reply: @escaping (NSNumber?) -> Void)
     func setScreenBrightness(_ value: Float, with reply: @escaping (Bool) -> Void)
+    // aoomooa: end leftover mediaremote-adapter.pl processes whose parent app is gone.
+    // pids = comma-separated list to check ("" = check every process of this user). Replies with how many were ended.
+    func terminateOrphanedAdapters(_ pids: String, marker: String, with reply: @escaping (Int) -> Void)
 }
 

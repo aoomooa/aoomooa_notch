@@ -112,6 +112,7 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
                 process.terminate()
                 process.waitUntilExit()
             }
+            AoomooaProcessGuard.shared.unregister(process)   // aoomooa
         }
 
         self.process = nil
@@ -205,9 +206,12 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
         
         self.process = process
         self.pipeHandler = pipeHandler
+        // aoomooa: forget it once it exits on its own
+        process.terminationHandler = { p in AoomooaProcessGuard.shared.unregister(p) }
 
         do {
             try process.run()
+            AoomooaProcessGuard.shared.register(process)   // aoomooa: PID file + terminate on quit
             streamTask = Task { [weak self] in
                 await self?.processJSONStream()
             }

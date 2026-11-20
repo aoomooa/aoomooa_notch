@@ -194,6 +194,26 @@ final class XPCHelperClient: NSObject {
         }
     }
     
+    // MARK: - aoomooa: leftover child processes
+
+    /// Ask the (unsandboxed) helper to end orphaned adapter processes. nil = helper unavailable.
+    nonisolated func terminateOrphanedAdapters(pids: [Int32], marker: String) async -> Int? {
+        do {
+            let service = await MainActor.run {
+                ensureRemoteService()
+            }
+            let list = pids.map { String($0) }.joined(separator: ",")
+            let result: Int = try await service.withContinuation { service, continuation in
+                service.terminateOrphanedAdapters(list, marker: marker) { count in
+                    continuation.resume(returning: count)
+                }
+            }
+            return result
+        } catch {
+            return nil
+        }
+    }
+
     // MARK: - Screen Brightness
     
     nonisolated func isScreenBrightnessAvailable() async -> Bool {

@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Darwin
 import ApplicationServices
 import IOKit
 import CoreGraphics
@@ -140,6 +141,79 @@ class BoringNotchXPCHelper: NSObject, BoringNotchXPCHelperProtocol {
     }
 
     // MARK: - Private helpers for DisplayServices / IOKit access
+    // MARK: - aoomooa: leftover mediaremote-adapter.pl cleanup
+    // Only ends a process when ALL of these hold: it belongs to this user, its parent is gone
+    // (adopted by launchd, PPID 1), and its arguments really contain the adapter script. Never killall.
+
+    @objc func terminateOrphanedAdapters(_ pids: String, marker: String, with reply: @escaping (Int) -> Void) {
+        let requested = pids.split(separator: ",").compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
+        let candidates = requested.isEmpty ? Self.userProcessIDs() : requested
+        var ended = 0
+        for pid in candidates where Self.isOrphanedAdapter(pid, marker: marker) {
+            kill(pid, SIGTERM)
+            var gone = false
+            for _ in 0..<50 {               // up to ~1 s
+                if kill(pid, 0) != 0 { gone = true; break }
+                usleep(20_000)
+            }
+            if !gone {
+                kill(pid, SIGKILL)
+                usleep(20_000)
+                gone = kill(pid, 0) != 0
+            }
+            if gone { ended += 1 }
+        }
+        reply(ended)
+    }
+
+    private static func isOrphanedAdapter(_ pid: Int32, marker: String) -> Bool {
+        guard pid > 1, !marker.isEmpty else { return false }
+        var kinfo = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, UInt32(mib.count), &kinfo, &size, nil, 0) == 0, size > 0 else { return false }
+        guard kinfo.kp_eproc.e_ucred.cr_uid == getuid(), kinfo.kp_eproc.e_ppid == 1 else { return false }
+        guard let args = arguments(of: pid) else { return false }
+        return args.contains { $0.hasSuffix("/" + marker) || $0 == marker }
+    }
+
+    private static func arguments(of pid: Int32) -> [String]? {
+        var argmax: Int32 = 0
+        var argmaxSize = MemoryLayout<Int32>.size
+        var mibMax: [Int32] = [CTL_KERN, KERN_ARGMAX]
+        guard sysctl(&mibMax, UInt32(mibMax.count), &argmax, &argmaxSize, nil, 0) == 0, argmax > 0 else { return nil }
+        var buffer = [UInt8](repeating: 0, count: Int(argmax))
+        var size = Int(argmax)
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        guard sysctl(&mib, UInt32(mib.count), &buffer, &size, nil, 0) == 0,
+              size > MemoryLayout<Int32>.size else { return nil }
+        let argc = buffer.withUnsafeBytes { $0.load(as: Int32.self) }
+        var index = MemoryLayout<Int32>.size
+        while index < size && buffer[index] != 0 { index += 1 }
+        while index < size && buffer[index] == 0 { index += 1 }
+        var args: [String] = []
+        var start = index
+        while index < size && args.count < Int(argc) {
+            if buffer[index] == 0 {
+                args.append(String(decoding: buffer[start..<index], as: UTF8.self))
+                start = index + 1
+            }
+            index += 1
+        }
+        return args
+    }
+
+    private static func userProcessIDs() -> [Int32] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_UID, Int32(bitPattern: getuid())]
+        var size = 0
+        guard sysctl(&mib, UInt32(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return [] }
+        let capacity = size / MemoryLayout<kinfo_proc>.stride + 16
+        var procs = [kinfo_proc](repeating: kinfo_proc(), count: capacity)
+        size = capacity * MemoryLayout<kinfo_proc>.stride
+        guard sysctl(&mib, UInt32(mib.count), &procs, &size, nil, 0) == 0 else { return [] }
+        return procs.prefix(size / MemoryLayout<kinfo_proc>.stride).map { $0.kp_proc.p_pid }
+    }
+
     private func displayServicesGetBrightness(displayID: CGDirectDisplayID, out: inout Float) -> Bool {
         guard let sym = dlsym(DisplayServicesHandle.handle, "DisplayServicesGetBrightness") else { return false }
         typealias Fn = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32

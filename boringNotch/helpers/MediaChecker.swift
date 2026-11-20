@@ -28,8 +28,10 @@ final class MediaChecker: Sendable {
             process.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
             process.arguments = [scriptURL.path, frameworkPath, nowPlayingTestClientPath, "test"]
 
+            process.terminationHandler = { p in AoomooaProcessGuard.shared.unregister(p) }   // aoomooa
             do {
                 try process.run()
+                AoomooaProcessGuard.shared.register(process)   // aoomooa
             } catch {
                 throw MediaCheckerError.processExecutionFailed
             }

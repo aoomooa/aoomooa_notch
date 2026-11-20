@@ -83,6 +83,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             screenUnlockedObserver = nil
         }
         MusicManager.shared.destroy()
+        AoomooaProcessGuard.shared.terminateAll()   // aoomooa: no leftover mediaremote-adapter.pl
         cleanupDragDetectors()
         cleanupWindows()
         XPCHelperClient.shared.stopMonitoringAccessibilityAuthorization()
@@ -280,6 +281,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AoomooaProcessGuard.shared.start()   // aoomooa: clean up what a crashed run left behind
+
 
         NotificationCenter.default.addObserver(
             self,
