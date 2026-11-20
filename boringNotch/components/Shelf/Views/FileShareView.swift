@@ -41,23 +41,23 @@ struct FileShareView: View {
 
     private var dropArea: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .fill(
                     LinearGradient(colors: [Color.black.opacity(0.35), Color.black.opacity(0.20)], startPoint: .topLeading, endPoint: .bottomTrailing)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .stroke(
                             vm.dropZoneTargeting
-                                ? Color.accentColor.opacity(0.9)
-                                : Color.white.opacity(0.1),
+                                ? DS.Colors.accent.opacity(0.9)
+                                : DS.Colors.separator,
                             style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [10])
                         )
                 )
                 .shadow(color: Color.black.opacity(0.6), radius: 6, x: 0, y: 2)
 
             // Content
-            VStack(spacing: 5) {
+            VStack(spacing: DS.Space.xs) {
                 ZStack {
                     Circle()
                         .fill(Color.white.opacity(
@@ -76,24 +76,24 @@ struct FileShareView: View {
                     }
                     .frame(width: 34, height: 34)
                         .foregroundStyle(
-                            vm.dropZoneTargeting ? Color.accentColor : Color.gray
+                            vm.dropZoneTargeting ? DS.Colors.accent : DS.Colors.textSecondary
                         )
                         .scaleEffect(
                             vm.dropZoneTargeting ? 1.06 : 1.0
                         )
-                        .animation(.spring(response: 0.36, dampingFraction: 0.7), value: vm.dropZoneTargeting)
+                        .animation(DS.Motion.micro, value: vm.dropZoneTargeting)
                 }
 
                 Text(selectedProvider.id)
-                    .font(.system(.headline, design: .rounded))
-                    .foregroundColor(.white.opacity(0.8))
+                    .font(DS.Fonts.body(.semibold))
+                    .foregroundColor(DS.Colors.textPrimary)
 
             }
-            .padding(18)
+            .padding(DS.Space.l)
             
             // Loading overlay
             if isProcessing || quickShare.isPickerOpen {
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .fill(.black.opacity(0.3))
                     .overlay(
                         ProgressView()
@@ -102,7 +102,7 @@ struct FileShareView: View {
                     )
             }
         }
-        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .contentShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
     }
 
     // MARK: - Actions

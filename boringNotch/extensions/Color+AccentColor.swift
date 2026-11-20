@@ -15,7 +15,7 @@ extension Color {
            let nsColor = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: colorData) {
             return Color(nsColor: nsColor)
         }
-        return .accentColor
+        return DS.Colors.accent   // aoomooa: 默认用唯一强调色
     }
     
     /// Returns a darker version of the accent color suitable for backgrounds
@@ -36,7 +36,7 @@ extension NSColor {
            let nsColor = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: colorData) {
             return nsColor
         }
-        return NSColor.controlAccentColor
+        return DS.Colors.accentNS   // aoomooa
     }
     
     /// Returns a darker version of the accent color as NSColor suitable for backgrounds
@@ -46,6 +46,6 @@ extension NSColor {
            let nsColor = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: colorData) {
             return nsColor.withSystemEffect(.disabled)
         }
-        return NSColor.controlAccentColor.withAlphaComponent(0.25)
+        return DS.Colors.accentNS.withAlphaComponent(0.25)
     }
 }

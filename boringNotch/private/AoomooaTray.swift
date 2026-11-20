@@ -13,7 +13,7 @@ struct NotchTrayView: View {
     @EnvironmentObject var vm: BoringViewModel
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: DS.Space.s) {
             // Existing shelf: AirDrop square on the left + the holding tray
             ShelfView()
                 .environmentObject(vm)

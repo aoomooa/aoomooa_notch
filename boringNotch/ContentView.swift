@@ -32,6 +32,7 @@ struct ContentView: View {
     @State private var pageDirection: CGFloat = 0           // aoomooa: 0 = drop from top, ±1 = slide sideways
     @State private var swipeCooldownUntil = Date.distantPast
     @State private var hoverProgress: CGFloat = 0           // aoomooa: streamline sweep 0…1
+    @AppStorage(AoomooaPrefs.Key.tintStrength) private var tintStrength = AoomooaPrefs.Default.tintStrength  // aoomooa
     @State private var anyDropDebounceTask: Task<Void, Never>?
 
     @State private var gestureProgress: CGFloat = .zero
@@ -45,7 +46,7 @@ struct ContentView: View {
     @Default(.showNotHumanFace) var showNotHumanFace
 
     // Shared interactive spring for movement/resizing to avoid conflicting animations
-    private let animationSpring = Animation.interactiveSpring(response: 0.40, dampingFraction: 0.72, blendDuration: 0)
+    private var animationSpring: Animation { DS.Motion.panel }   // aoomooa: 统一走面板档
 
     private let extendedHoverPadding: CGFloat = 30
     private let zeroHeightHoverPadding: CGFloat = 10
@@ -106,7 +107,7 @@ struct ContentView: View {
                         ? (cornerRadiusInsets.opened.top) : (cornerRadiusInsets.opened.bottom)
                         : cornerRadiusInsets.closed.bottom
                     )
-                    .padding([.horizontal, .bottom], vm.notchState == .open ? 12 : 0)
+                    .padding([.horizontal, .bottom], vm.notchState == .open ? DS.Space.m : 0)
                     .background {
                         // aoomooa: direction B — the open notch takes the album-art colour
                         ZStack {
@@ -115,13 +116,13 @@ struct ContentView: View {
                                 && coordinator.currentView == .home
                                 && !musicManager.isPlayerIdle {
                                 LinearGradient(
-                                    colors: [.clear, Color(nsColor: musicManager.avgColor).opacity(AoomooaStyle.tintStrength)],
+                                    colors: [.clear, Color(nsColor: musicManager.avgColor).opacity(min(max(tintStrength, 0), 1))],
                                     startPoint: .top,
                                     endPoint: .bottom
                                 )
                             }
                         }
-                        .animation(.easeInOut(duration: AoomooaStyle.tintFade), value: musicManager.avgColor)
+                        .animation(DS.Motion.page, value: musicManager.avgColor)
                     }
                     .clipShape(currentNotchShape)
                     .overlay(alignment: .top) {
@@ -158,7 +159,7 @@ struct ContentView: View {
                         
                         return view
                             .animation(vm.notchState == .open ? openAnimation : closeAnimation, value: vm.notchState)
-                            .animation(.smooth, value: gestureProgress)
+                            .animation(DS.Motion.panel, value: gestureProgress)
                     }
                     .contentShape(Rectangle())
                     .onHover { hovering in
@@ -250,7 +251,7 @@ struct ContentView: View {
             y: gestureScale,
             anchor: .top
         )
-        .animation(.smooth, value: gestureProgress)
+        .animation(DS.Motion.panel, value: gestureProgress)
         .background(dragDetector)
         .preferredColorScheme(.dark)
         .environmentObject(vm)
@@ -669,8 +670,8 @@ struct ContentView: View {
     private var pageTransition: AnyTransition {
         guard pageDirection != 0 else { return AoomooaStyle.tabTransition }
         return .asymmetric(
-            insertion: .offset(x: 70 * pageDirection).combined(with: .opacity),
-            removal: .offset(x: -70 * pageDirection).combined(with: .opacity)
+            insertion: .offset(x: AoomooaStyle.swipeTransitionOffset * pageDirection).combined(with: .opacity),
+            removal: .offset(x: -AoomooaStyle.swipeTransitionOffset * pageDirection).combined(with: .opacity)
         )
     }
 
@@ -678,7 +679,7 @@ struct ContentView: View {
     private func handleTabSwipe(step: Int, translation: CGFloat, phase: NSEvent.Phase) {
         if phase == .ended {
             swipeLatched = false
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) { swipeOffset = 0 }
+            withAnimation(DS.Motion.panel) { swipeOffset = 0 }
             return
         }
         guard vm.notchState == .open, !swipeLatched, Date() >= swipeCooldownUntil,
@@ -692,8 +693,8 @@ struct ContentView: View {
 
         // follow the fingers a little; at the first/last page it only stretches (rubber band)
         let progress = min(translation / AoomooaHover.tabSwipeDistance, 1)
-        let follow = AoomooaHover.tabSwipeFollow * progress * (canMove ? 1 : 0.4)
-        withAnimation(.interactiveSpring(response: 0.2, dampingFraction: 0.86)) {
+        let follow = AoomooaHover.tabSwipeFollow * progress * (canMove ? 1 : AoomooaHover.rubberBand)
+        withAnimation(DS.Motion.micro) {
             swipeOffset = -CGFloat(step) * follow
         }
 
@@ -706,11 +707,11 @@ struct ContentView: View {
         pageDirection = CGFloat(step)
         Task { @MainActor in
             await Task.yield()
-            withAnimation(.smooth(duration: 0.32)) {
+            withAnimation(DS.Motion.page) {
                 swipeOffset = 0
                 coordinator.currentView = order[next]
             }
-            try? await Task.sleep(nanoseconds: 450_000_000)
+            try? await Task.sleep(for: .seconds(DS.Motion.pageDuration + DS.Motion.microDuration))
             pageDirection = 0
         }
     }

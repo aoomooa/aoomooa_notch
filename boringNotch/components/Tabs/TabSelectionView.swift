@@ -5,7 +5,6 @@
 //  Created by Hugo Persson on 2024-08-25.
 //
 
-import Defaults
 import SwiftUI
 
 struct TabModel: Identifiable {
@@ -30,20 +29,20 @@ struct TabSelectionView: View {
         HStack(spacing: 0) {
             ForEach(tabs) { tab in
                     TabButton(label: tab.label, icon: tab.icon, selected: coordinator.currentView == tab.view) {
-                        withAnimation(.smooth) {
+                        withAnimation(DS.Motion.page) {
                             coordinator.currentView = tab.view
                         }
                     }
-                    .frame(height: 26)
-                    .foregroundStyle(tab.view == coordinator.currentView ? .white : .gray)
+                    .frame(height: DS.Size.tab)
+                    .foregroundStyle(tab.view == coordinator.currentView ? DS.Colors.textPrimary : DS.Colors.textSecondary)
                     .background {
                         if tab.view == coordinator.currentView {
                             Capsule()
-                                .fill(coordinator.currentView == tab.view ? Color(nsColor: .secondarySystemFill) : Color.clear)
+                                .fill(coordinator.currentView == tab.view ? DS.Colors.fillHover : Color.clear)
                                 .matchedGeometryEffect(id: "capsule", in: animation)
                         } else {
                             Capsule()
-                                .fill(coordinator.currentView == tab.view ? Color(nsColor: .secondarySystemFill) : Color.clear)
+                                .fill(coordinator.currentView == tab.view ? DS.Colors.fillHover : Color.clear)
                                 .matchedGeometryEffect(id: "capsule", in: animation)
                                 .hidden()
                         }

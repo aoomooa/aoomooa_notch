@@ -297,7 +297,7 @@ struct GeneralSettings: View {
                         Spacer()
                         Text(
                             Defaults[.gestureSensitivity] == 100
-                                ? "High" : Defaults[.gestureSensitivity] == 200 ? "Medium" : "Low"
+                                ? "高" : Defaults[.gestureSensitivity] == 200 ? "中" : "低"
                         )
                         .foregroundStyle(.secondary)
                     }
@@ -306,7 +306,7 @@ struct GeneralSettings: View {
         } header: {
             HStack {
                 Text("Gesture control")
-                customBadge(text: "Beta")
+                customBadge(text: "测试版")
             }
         } footer: {
             Text(
@@ -329,17 +329,10 @@ struct GeneralSettings: View {
             }
             Toggle("Remember last tab", isOn: $coordinator.openLastTabByDefault)
             if openNotchOnHover {
-                Slider(value: $minimumHoverDuration, in: 0...1, step: 0.1) {
-                    HStack {
-                        Text("Hover delay")
-                        Spacer()
-                        Text("\(minimumHoverDuration, specifier: "%.1f")s")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .onChange(of: minimumHoverDuration) {
-                    NotificationCenter.default.post(
-                        name: Notification.Name.notchHeightChanged, object: nil)
+                // aoomooa: 悬停时长由「aoomooa」页的设置控制（原来的“悬停延迟”已不起作用）
+                LabeledContent("悬停延迟") {
+                    Text("在「aoomooa」页调整")
+                        .foregroundStyle(.secondary)
                 }
             }
         } header: {
@@ -511,7 +504,7 @@ struct HUD: View {
             Section {
                 Picker("Option key behaviour", selection: $optionKeyAction) {
                     ForEach(OptionKeyAction.allCases) { opt in
-                        Text(opt.rawValue).tag(opt)
+                        Text(opt.displayName).tag(opt)
                     }
                 }
                 
@@ -543,7 +536,7 @@ struct HUD: View {
             } header: {
                 HStack {
                     Text("Open Notch")
-                    customBadge(text: "Beta")
+                    customBadge(text: "测试版")
                 }
             }
             .disabled(!hudReplacement)
@@ -606,7 +599,7 @@ struct Media: View {
             Section {
                 Picker("Music Source", selection: $mediaController) {
                     ForEach(availableMediaControllers) { controller in
-                        Text(controller.rawValue).tag(controller)
+                        Text(controller.displayName).tag(controller)
                     }
                 }
                 .onChange(of: mediaController) { _, _ in
@@ -647,7 +640,7 @@ struct Media: View {
                 Toggle("Show sneak peek on playback changes", isOn: $enableSneakPeek)
                 Picker("Sneak Peek Style", selection: $sneakPeekStyles) {
                     ForEach(SneakPeekStyle.allCases) { style in
-                        Text(style.rawValue).tag(style)
+                        Text(style.displayName).tag(style)
                     }
                 }
                 HStack {
@@ -665,7 +658,7 @@ struct Media: View {
                     label:
                         HStack {
                             Text("Full screen behavior")
-                            customBadge(text: "Beta")
+                            customBadge(text: "测试版")
                         }
                 ) {
                     Text("Hide for all apps").tag(HideNotchOption.always)
@@ -682,7 +675,7 @@ struct Media: View {
                 Defaults.Toggle(key: .enableLyrics) {
                     HStack {
                         Text("Show lyrics below artist name")
-                        customBadge(text: "Beta")
+                        customBadge(text: "测试版")
                     }
                 }
             } header: {
@@ -1195,7 +1188,7 @@ struct Appearance: View {
                 }
                 Picker("Slider color", selection: $sliderColor) {
                     ForEach(SliderColorEnum.allCases, id: \.self) { option in
-                        Text(option.rawValue)
+                        Text(option.displayName)
                     }
                 }
             } header: {
@@ -1234,7 +1227,7 @@ struct Appearance: View {
             } header: {
                 HStack {
                     Text("Custom music live activity animation")
-                    customBadge(text: "Coming soon")
+                    customBadge(text: "即将推出")
                 }
             }
 
@@ -1608,7 +1601,7 @@ struct Advanced: View {
             } header: {
                 HStack {
                     Text("App icon")
-                    customBadge(text: "Coming soon")
+                    customBadge(text: "即将推出")
                 }
             }
             
@@ -1718,7 +1711,7 @@ struct AccentCircleButton: View {
             }
         }
         .buttonStyle(.plain)
-        .help(isSystemDefault ? "Use your macOS system accent color" : "")
+        .help(isSystemDefault ? "使用 aoomooa 默认红色" : "")
     }
 }
 

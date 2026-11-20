@@ -44,7 +44,7 @@ final class NotchLauncherModel: ObservableObject {
     }
 
     func remove(_ path: String) {
-        withAnimation(.easeOut(duration: 0.18)) {
+        withAnimation(DS.Motion.micro) {
             paths.removeAll { $0 == path }
         }
         save()
@@ -63,7 +63,7 @@ final class NotchLauncherModel: ObservableObject {
             let picked = panel.urls.map { $0.path }
             Task { @MainActor in
                 guard let self else { return }
-                withAnimation(.easeOut(duration: 0.18)) {
+                withAnimation(DS.Motion.micro) {
                     for p in picked where !self.paths.contains(p) {
                         self.paths.append(p)
                     }
@@ -92,11 +92,13 @@ struct NotchLauncherView: View {
     @State private var running: Set<String> = []
 
     // Grid + Dock feel — tweak freely
-    private let maxIcon: CGFloat = 38       // largest resting icon size
+    private let maxIcon: CGFloat = DS.Size.appIcon   // largest resting icon size
     private let minColumns = 4              // at least this many per row
     private let maxRows = 3                 // grows to 2–3 rows (4 when you add lots)
     private let maxScale: CGFloat = 1.32    // magnification right under the cursor
     private let spread: CGFloat = 36        // how far the magnification reaches
+    private let labelShowsAt: CGFloat = 1.2 // show the name once an icon is this big
+    private let bounceDepth: CGFloat = 8    // launch bounce distance
 
     var body: some View {
         GeometryReader { geo in
@@ -105,7 +107,7 @@ struct NotchLauncherView: View {
             let rows = max(1, Int((Double(n) / Double(cols)).rounded(.up)))
             let cellW = geo.size.width / CGFloat(cols)
             let cellH = min(geo.size.height / CGFloat(rows), cellW)
-            let icon = max(20, min(maxIcon, cellW - 20, cellH - 14))
+            let icon = max(DS.Size.appIconMin, min(maxIcon, cellW - DS.Space.l - DS.Space.xs, cellH - DS.Space.m - DS.Space.xs))
             let top = max(0, (geo.size.height - cellH * CGFloat(rows)) / 2)
 
             ZStack(alignment: .topLeading) {
@@ -126,12 +128,12 @@ struct NotchLauncherView: View {
                 case .ended: hover = nil
                 }
             }
-            .animation(.interactiveSpring(response: 0.22, dampingFraction: 0.86), value: hover)
+            .animation(DS.Motion.micro, value: hover)
             .contextMenu {
                 Button("添加 App…") { model.addViaPicker() }
             }
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, DS.Space.xs)
         .onAppear { refreshRunning() }
     }
 
@@ -145,28 +147,29 @@ struct NotchLauncherView: View {
 
     @ViewBuilder
     private func tile(_ path: String, size: CGFloat, scale s: CGFloat) -> some View {
-        VStack(spacing: 3) {
+        VStack(spacing: DS.Space.xs) {
             Image(nsImage: model.icon(path))
                 .resizable()
                 .interpolation(.high)
                 .frame(width: size, height: size)
-                .offset(y: bouncing == path ? 8 : 0)
+                .offset(y: bouncing == path ? bounceDepth : 0)
             Circle()
-                .fill(Color.white.opacity(running.contains(path) ? 0.75 : 0))
-                .frame(width: 4, height: 4)
+                .fill(running.contains(path) ? DS.Colors.indicator : Color.clear)
+                .frame(width: DS.Size.dot, height: DS.Size.dot)
         }
         .overlay(alignment: .bottom) {
             Text(model.name(path))
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Color.white)
+                .font(DS.Fonts.caption(.medium))
+                .foregroundStyle(DS.Colors.textPrimary)
                 .lineLimit(1)
                 .fixedSize()
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
-                .background(Capsule().fill(Color.black.opacity(0.75)))
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
-                .offset(y: 18)
-                .opacity(s > 1.2 ? 1 : 0)
+                .padding(.horizontal, DS.Space.s)
+                .padding(.vertical, DS.Space.xs)
+                .background(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).fill(DS.Colors.overlay))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
+                    .strokeBorder(DS.Colors.separator, lineWidth: DS.Size.hairline))
+                .offset(y: DS.Space.l + DS.Space.xs)
+                .opacity(s > labelShowsAt ? 1 : 0)
         }
         .contentShape(Rectangle())
         .onTapGesture { tap(path) }
@@ -179,11 +182,11 @@ struct NotchLauncherView: View {
     private func tap(_ path: String) {
         // Dock-style launch bounce (away from the edge, i.e. downward), then open and tuck away
         Task { @MainActor in
-            withAnimation(.interpolatingSpring(stiffness: 280, damping: 10)) { bouncing = path }
+            withAnimation(DS.Motion.micro) { bouncing = path }
             model.open(path)
-            try? await Task.sleep(nanoseconds: 180_000_000)
-            withAnimation(.interpolatingSpring(stiffness: 280, damping: 14)) { bouncing = nil }
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            try? await Task.sleep(for: .seconds(DS.Motion.microDuration))
+            withAnimation(DS.Motion.panel) { bouncing = nil }
+            try? await Task.sleep(for: .seconds(DS.Motion.panelDuration))
             withAnimation(AoomooaHover.collapseAnimation) { vm.close() }
             refreshRunning()
         }
@@ -196,15 +199,18 @@ struct NotchLauncherView: View {
 
 /// aoomooa: Reminders on the left, the app dock on the right
 struct NotchWorkspaceView: View {
+    /// 左边提醒事项占的宽度比例
+    private let remindersShare: CGFloat = 0.44
+
     var body: some View {
         GeometryReader { g in
             HStack(spacing: 0) {
                 NotchRemindersView()
-                    .frame(width: g.size.width * 0.44)
+                    .frame(width: g.size.width * remindersShare)
                 Rectangle()
-                    .fill(Color.white.opacity(0.10))
-                    .frame(width: 1)
-                    .padding(.vertical, 10)
+                    .fill(DS.Colors.separator)
+                    .frame(width: DS.Size.hairline)
+                    .padding(.vertical, DS.Space.m)
                 NotchLauncherView()
                     .frame(maxWidth: .infinity)
             }

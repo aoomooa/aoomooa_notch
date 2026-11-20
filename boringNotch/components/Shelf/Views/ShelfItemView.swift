@@ -99,13 +99,13 @@ struct ShelfItemView: View {
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: 56, height: 56)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .shadow(color: .black.opacity(0.15), radius: 3, x: 0, y: 2)
     }
 
     private var textView: some View {
         Text(item.displayName)
-            .font(.system(size: 12, weight: .medium))
+            .font(DS.Fonts.caption(.medium))
             .foregroundStyle(.primary)
             .lineLimit(2)
             .truncationMode(.middle)
@@ -114,10 +114,10 @@ struct ShelfItemView: View {
     }
 
     private var backgroundView: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
+        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
             .fill(backgroundColor)
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                     .strokeBorder(
                         strokeColor,
                         lineWidth: strokeWidth
@@ -127,9 +127,9 @@ struct ShelfItemView: View {
 
     private var backgroundColor: Color {
         if debouncedDropTarget {
-            return Color.accentColor.opacity(0.25)
+            return DS.Colors.accent.opacity(0.25)
         } else if isSelected {
-            return Color.accentColor.opacity(0.15)
+            return DS.Colors.accent.opacity(0.15)
         } else {
             return Color.clear
         }
@@ -137,9 +137,9 @@ struct ShelfItemView: View {
 
     private var strokeColor: Color {
         if debouncedDropTarget {
-            return Color.accentColor.opacity(0.9)
+            return DS.Colors.accent.opacity(0.9)
         } else if isSelected {
-            return Color.accentColor.opacity(0.8)
+            return DS.Colors.accent.opacity(0.8)
         } else {
             return Color.clear
         }

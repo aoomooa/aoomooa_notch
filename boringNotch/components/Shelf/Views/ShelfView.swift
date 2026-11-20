@@ -59,11 +59,11 @@ struct ShelfView: View {
     }
 
     var panel: some View {
-        RoundedRectangle(cornerRadius: 16)
+        RoundedRectangle(cornerRadius: DS.Radius.panel, style: .continuous)
             .stroke(
                 vm.dragDetectorTargeting
-                    ? Color.accentColor.opacity(0.9)
-                    : Color.white.opacity(0.1),
+                    ? DS.Colors.accent.opacity(0.9)
+                    : DS.Colors.separator,
                 style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [10])
             )
             .overlay {
@@ -80,17 +80,16 @@ struct ShelfView: View {
     var content: some View {
         Group {
             if tvm.isEmpty {
-                VStack(spacing: 10) {
+                VStack(spacing: DS.Space.s) {
                     Image(systemName: "tray.and.arrow.down")
                         .symbolVariant(.fill)
                         .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.white, .gray)
+                        .foregroundStyle(DS.Colors.textPrimary, DS.Colors.textSecondary)
                         .imageScale(.large)
                     
                     Text("把文件拖到这里")
-                        .foregroundStyle(.gray)
-                        .font(.system(.title3, design: .rounded))
-                        .fontWeight(.medium)
+                        .foregroundStyle(DS.Colors.textSecondary)
+                        .font(DS.Fonts.body(.medium))
                 }
             } else {
                 ScrollView(.horizontal) {

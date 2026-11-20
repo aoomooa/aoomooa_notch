@@ -18,6 +18,8 @@ final class NotchRemindersModel: ObservableObject {
 
     /// Days shown either side of today in the strip
     static let dayRange = 5
+    /// 勾选后先停留这么久（看得到对勾）再从列表移除
+    static let completeLinger: Double = 0.45
 
     @Published private(set) var items: [EKReminder] = []
     @Published private(set) var dayEvents: [EKEvent] = []
@@ -98,7 +100,7 @@ final class NotchRemindersModel: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.allIncomplete = sorted
-                withAnimation(.smooth) { self.recompute() }
+                withAnimation(DS.Motion.micro) { self.recompute() }
             }
         }
     }
@@ -115,11 +117,11 @@ final class NotchRemindersModel: ObservableObject {
               let end = cal.date(byAdding: .day, value: Self.dayRange + 1, to: today) else { return }
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
         allEvents = store.events(matching: predicate).sorted { $0.startDate < $1.startDate }
-        withAnimation(.smooth) { recompute() }
+        withAnimation(DS.Motion.micro) { recompute() }
     }
 
     func selectDay(_ day: Date) {
-        withAnimation(.smooth(duration: 0.25)) {
+        withAnimation(DS.Motion.micro) {
             selectedDay = Calendar.current.startOfDay(for: day)
             recompute()
         }
@@ -162,16 +164,16 @@ final class NotchRemindersModel: ObservableObject {
 
     func complete(_ reminder: EKReminder) {
         let id = reminder.calendarItemIdentifier
-        withAnimation(.smooth(duration: 0.2)) { _ = completingIDs.insert(id) }
+        withAnimation(DS.Motion.micro) { _ = completingIDs.insert(id) }
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 450_000_000)
+            try? await Task.sleep(for: .seconds(Self.completeLinger))
             reminder.isCompleted = true
             do {
                 try store.save(reminder, commit: true)
             } catch {
                 reminder.isCompleted = false
             }
-            withAnimation(.smooth) {
+            withAnimation(DS.Motion.micro) {
                 if reminder.isCompleted {
                     allIncomplete.removeAll { $0.calendarItemIdentifier == id }
                     recompute()
@@ -195,7 +197,7 @@ final class NotchRemindersModel: ObservableObject {
         do {
             try store.save(reminder, commit: true)
             allIncomplete.insert(reminder, at: 0)
-            withAnimation(.smooth) { recompute() }
+            withAnimation(DS.Motion.micro) { recompute() }
         } catch {
             // ignore; the list simply won't change
         }
@@ -207,6 +209,10 @@ struct NotchRemindersView: View {
     @State private var draft = ""
     @FocusState private var inputFocused: Bool
     @State private var hoveredDay: Date?
+    /// 悬停某一天时放大
+    private static let dayHoverScale: CGFloat = 1.15
+    /// 日期条左右两端渐隐的比例
+    private static let edgeFade: CGFloat = 0.12
 
     var body: some View {
         Group {
@@ -216,8 +222,7 @@ struct NotchRemindersView: View {
                 listView
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 2)
+        .padding(.horizontal, DS.Space.m)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { model.start() }
         .onDisappear {
@@ -230,17 +235,17 @@ struct NotchRemindersView: View {
     }
 
     private var listView: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
             calendarHeader
 
             if model.items.isEmpty && model.dayEvents.isEmpty {
-                VStack(spacing: 5) {
+                VStack(spacing: DS.Space.xs) {
                     Image(systemName: "calendar.badge.checkmark")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.gray)
+                        .font(DS.Fonts.body)
+                        .foregroundStyle(DS.Colors.textSecondary)
                     Text(emptyText)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.gray)
+                        .font(DS.Fonts.body)
+                        .foregroundStyle(DS.Colors.textSecondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -262,24 +267,24 @@ struct NotchRemindersView: View {
     }
 
     private var inputField: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DS.Space.s) {
             Image(systemName: "plus")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.gray)
+                .font(DS.Fonts.caption(.semibold))
+                .foregroundStyle(DS.Colors.textSecondary)
             TextField(placeholder, text: $draft)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
-                .foregroundStyle(Color.white)
+                .font(DS.Fonts.body)
+                .foregroundStyle(DS.Colors.textPrimary)
                 .focused($inputFocused)
                 .onSubmit {
                     model.add(draft)
                     draft = ""
                 }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(Capsule().fill(Color.white.opacity(0.08)))
-        .contentShape(Capsule())
+        .padding(.horizontal, DS.Space.m)
+        .padding(.vertical, DS.Space.xs)
+        .background(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Colors.fill))
+        .contentShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .onTapGesture { inputFocused = true }
     }
 
@@ -298,10 +303,10 @@ struct NotchRemindersView: View {
     // MARK: Calendar header — big month + swipeable day row
 
     private var calendarHeader: some View {
-        HStack(alignment: .center, spacing: 6) {
+        HStack(alignment: .center, spacing: DS.Space.s) {
             Text(formatter("M月").string(from: model.selectedDay))
-                .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.white)
+                .font(DS.Fonts.title)
+                .foregroundStyle(DS.Colors.textPrimary)
                 .fixedSize()
                 .contentTransition(.numericText())
             dayStrip
@@ -322,18 +327,18 @@ struct NotchRemindersView: View {
                             .id(day)
                             .onTapGesture { model.selectDay(day) }
                             .onHover { inside in
-                                withAnimation(.interactiveSpring(response: 0.2, dampingFraction: 0.8)) {
+                                withAnimation(DS.Motion.micro) {
                                     if inside { hoveredDay = day } else if hoveredDay == day { hoveredDay = nil }
                                 }
                             }
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, DS.Space.m)
             }
             .mask(
                 LinearGradient(stops: [.init(color: .clear, location: 0),
-                                       .init(color: .black, location: 0.12),
-                                       .init(color: .black, location: 0.88),
+                                       .init(color: .black, location: Self.edgeFade),
+                                       .init(color: .black, location: 1 - Self.edgeFade),
                                        .init(color: .clear, location: 1)],
                                startPoint: .leading, endPoint: .trailing)
             )
@@ -341,103 +346,103 @@ struct NotchRemindersView: View {
             .onDisappear { model.isHoveringDayStrip = false }
             .onAppear { proxy.scrollTo(model.selectedDay, anchor: .center) }
             .onChange(of: model.selectedDay) { _, day in
-                withAnimation(.smooth(duration: 0.25)) { proxy.scrollTo(day, anchor: .center) }
+                withAnimation(DS.Motion.micro) { proxy.scrollTo(day, anchor: .center) }
             }
         }
-        .frame(height: 40)
+        .frame(height: DS.Size.dayStripHeight)
     }
 
-    /// Weekday over the date; today in system red, the selected day big and white
+    /// Weekday over the date; today in the accent red, the selected day big and white
     private func dayItem(_ day: Date) -> some View {
         let cal = Calendar.current
         let selected = cal.isDate(day, inSameDayAs: model.selectedDay)
         let isToday = cal.isDateInToday(day)
         let busy = model.busyDays.contains(cal.startOfDay(for: day))
-        let red = Color(nsColor: .systemRed)
+        let red = DS.Colors.accent
         let emphasised = selected || isToday
-        let numberColor: Color = isToday ? red : (selected ? Color.white : Color.white.opacity(0.5))
+        let numberColor: Color = isToday ? red : (selected ? DS.Colors.textPrimary : DS.Colors.textSecondary)
 
-        return VStack(spacing: 1) {
+        return VStack(spacing: 0) {
             Text(formatter("EEE").string(from: day))
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(emphasised ? Color.white.opacity(0.85) : Color.gray.opacity(0.7))
+                .font(DS.Fonts.caption(.semibold))
+                .foregroundStyle(emphasised ? DS.Colors.textPrimary : DS.Colors.textTertiary)
             Text(String(format: "%02d", cal.component(.day, from: day)))
-                .font(.system(size: emphasised ? 18 : 13, weight: emphasised ? .bold : .medium, design: .rounded))
+                .font(emphasised ? DS.Fonts.title : DS.Fonts.body(.medium).monospacedDigit())
                 .foregroundStyle(numberColor)
             Circle()
                 .fill(busy ? red : Color.clear)
-                .frame(width: 3, height: 3)
+                .frame(width: DS.Size.dot, height: DS.Size.dot)
         }
-        .frame(width: 30)
-        .scaleEffect(hoveredDay == day ? 1.15 : 1)
+        .frame(width: DS.Size.dayWidth)
+        .scaleEffect(hoveredDay == day ? Self.dayHoverScale : 1)
         .contentShape(Rectangle())
     }
 
     // MARK: Rows
 
     private func eventRow(_ event: EKEvent) -> some View {
-        HStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 1.5)
+        HStack(spacing: DS.Space.s) {
+            Capsule()
                 .fill(Color(cgColor: event.calendar.cgColor))
-                .frame(width: 3, height: 14)
+                .frame(width: DS.Size.eventBar, height: DS.Size.rowIcon)
             Text(event.title ?? "")
-                .font(.system(size: 13))
-                .foregroundStyle(Color.white)
+                .font(DS.Fonts.body)
+                .foregroundStyle(DS.Colors.textPrimary)
                 .lineLimit(1)
-            Spacer(minLength: 4)
+            Spacer(minLength: DS.Space.xs)
             Text(event.isAllDay ? "全天" : time(event.startDate))
-                .font(.system(size: 11))
-                .foregroundStyle(Color.gray)
+                .font(DS.Fonts.caption)
+                .foregroundStyle(DS.Colors.textSecondary)
         }
-        .padding(.vertical, 4)
-        .padding(.leading, 5)
+        .padding(.vertical, DS.Space.xs)
+        .padding(.leading, DS.Space.xs)
         .transition(.opacity)
     }
 
     private func row(_ reminder: EKReminder) -> some View {
         let done = model.completingIDs.contains(reminder.calendarItemIdentifier)
-        return HStack(spacing: 8) {
+        return HStack(spacing: DS.Space.s) {
             Button {
                 model.complete(reminder)
             } label: {
                 Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 14))
-                    .foregroundStyle(done ? Color.white : Color.gray)
+                    .font(DS.Fonts.body)
+                    .foregroundStyle(done ? DS.Colors.success : DS.Colors.textSecondary)
             }
             .buttonStyle(.plain)
 
             Text(reminder.title ?? "")
-                .font(.system(size: 13))
-                .foregroundStyle(done ? Color.gray : Color.white)
-                .strikethrough(done, color: Color.gray)
+                .font(DS.Fonts.body)
+                .foregroundStyle(done ? DS.Colors.textSecondary : DS.Colors.textPrimary)
+                .strikethrough(done, color: DS.Colors.textSecondary)
                 .lineLimit(1)
 
-            Spacer(minLength: 4)
+            Spacer(minLength: DS.Space.xs)
 
             if let due = dueText(reminder) {
                 Text(due)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.gray)
+                    .font(DS.Fonts.caption)
+                    .foregroundStyle(due == "已过期" ? DS.Colors.warning : DS.Colors.textSecondary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, DS.Space.xs)
         .contentShape(Rectangle())
         .transition(.opacity)
     }
 
     private var deniedView: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: DS.Space.s) {
             Text("没有提醒事项的访问权限")
-                .font(.system(size: 12))
-                .foregroundStyle(Color.gray)
+                .font(DS.Fonts.body)
+                .foregroundStyle(DS.Colors.textSecondary)
             Button("打开系统设置") {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders") {
                     NSWorkspace.shared.open(url)
                 }
             }
             .buttonStyle(.plain)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(Color.white)
+            .font(DS.Fonts.body(.medium))
+            .foregroundStyle(DS.Colors.accent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

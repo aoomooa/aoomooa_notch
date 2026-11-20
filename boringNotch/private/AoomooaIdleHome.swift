@@ -56,12 +56,12 @@ final class FavouriteSitesModel: ObservableObject {
 
     func add(title: String, url: String) {
         guard !sites.contains(where: { $0.url == url }) else { return }
-        withAnimation(.smooth) { sites.append(.init(title: title, url: url)) }
+        withAnimation(DS.Motion.micro) { sites.append(.init(title: title, url: url)) }
         save()
     }
 
     func remove(_ site: FavouriteSite) {
-        withAnimation(.smooth) { sites.removeAll { $0.url == site.url } }
+        withAnimation(DS.Motion.micro) { sites.removeAll { $0.url == site.url } }
         save()
     }
 
@@ -116,7 +116,7 @@ final class FavouriteSitesModel: ObservableObject {
         defer { if scoped { source.stopAccessingSecurityScopedResource() } }
         do {
             try fm.copyItem(at: source, to: target)
-            withAnimation(.smooth) { sites[i].iconPath = target.path }
+            withAnimation(DS.Motion.micro) { sites[i].iconPath = target.path }
             save()
         } catch {
             NSLog("aoomooa: could not copy site icon: \(error)")
@@ -239,44 +239,52 @@ struct AoomooaIdleHomeView: View {
     @ObservedObject private var status = SystemStatusModel.shared
     @EnvironmentObject var vm: BoringViewModel
 
+    /// 三栏宽度比例：播放 · 网站 ·（剩下给）状态
+    private let playerShare: CGFloat = 0.42
+    private let sitesShare: CGFloat = 0.28
+    private let siteColumns = 3
+    /// 用量超过这个比例就标成警告色
+    static let warnFraction: Double = 0.85
+
     var body: some View {
         GeometryReader { g in
             HStack(alignment: .top, spacing: 0) {
                 NowPlayingColumn()
-                    .frame(width: g.size.width * 0.42)
+                    .frame(width: g.size.width * playerShare)
                 divider
                 sitesColumn
-                    .frame(width: g.size.width * 0.28)
+                    .frame(width: g.size.width * sitesShare)
                 divider
                 statusColumn
                     .frame(maxWidth: .infinity)
             }
         }
-        .padding(.top, 2)
         .onAppear { status.start() }
         .onDisappear { status.stop() }
     }
 
     private var divider: some View {
         Rectangle()
-            .fill(Color.white.opacity(0.10))
-            .frame(width: 1)
-            .padding(.vertical, 8)
+            .fill(DS.Colors.separator)
+            .frame(width: DS.Size.hairline)
+            .padding(.vertical, DS.Space.m)
     }
 
     private func header(_ text: String, _ icon: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon).font(.system(size: 10, weight: .semibold))
-            Text(text).font(.system(size: 11, weight: .semibold))
+        HStack(spacing: DS.Space.xs) {
+            Image(systemName: icon)
+            Text(text)
         }
-        .foregroundStyle(Color.gray)
+        .font(DS.Fonts.caption(.semibold))
+        .foregroundStyle(DS.Colors.textSecondary)
     }
 
     // Favourite sites
     private var sitesColumn: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
             header("常用网站", "star")
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 8) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: DS.Space.s), count: siteColumns),
+                      spacing: DS.Space.s) {
                 ForEach(sites.sites) { site in
                     SiteTile(site: site) {
                         sites.open(site)
@@ -294,16 +302,16 @@ struct AoomooaIdleHomeView: View {
                 }
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, DS.Space.m)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
     // System status
     private var statusColumn: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
             HStack {
                 header("系统状态", "gauge.with.dots.needle.33percent")
-                Spacer(minLength: 4)
+                Spacer(minLength: DS.Space.xs)
                 thermalBadge
             }
             StatRow(label: "CPU", value: "\(Int((status.cpu * 100).rounded()))%", fraction: status.cpu)
@@ -314,41 +322,37 @@ struct AoomooaIdleHomeView: View {
                     value: String(format: "剩 %.0f GB", status.diskFree / 1_000_000_000),
                     fraction: status.diskTotal > 0 ? 1 - status.diskFree / status.diskTotal : 0)
             HStack {
-                Text("网络").font(.system(size: 11)).foregroundStyle(Color.gray)
-                Spacer(minLength: 4)
-                Text("↓\(speed(status.downPerSec))  ↑\(speed(status.upPerSec))")
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
-                    .foregroundStyle(Color.white)
+                Text("网络").font(DS.Fonts.caption).foregroundStyle(DS.Colors.textSecondary)
+                Spacer(minLength: DS.Space.xs)
+                Text(verbatim: "↓\(speed(status.downPerSec))  ↑\(speed(status.upPerSec))")
+                    .font(DS.Fonts.caption(.medium).monospacedDigit())
+                    .foregroundStyle(DS.Colors.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, DS.Space.m)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    /// Green / yellow / orange / red dot from macOS's thermal pressure
+    /// 成功色 = 正常；警告色 = 偏热；强调色 = 过热（只用规范里的语义色）
     private var thermalBadge: some View {
         let (text, color): (String, Color) = {
             switch status.thermal {
-            case .nominal: return ("正常", Color(nsColor: .systemGreen))
-            case .fair: return ("略热", Color(nsColor: .systemYellow))
-            case .serious: return ("很热", Color(nsColor: .systemOrange))
-            case .critical: return ("过热", Color(nsColor: .systemRed))
-            @unknown default: return ("正常", Color(nsColor: .systemGreen))
+            case .nominal: return ("正常", DS.Colors.success)
+            case .fair: return ("略热", DS.Colors.warning)
+            case .serious: return ("很热", DS.Colors.warning)
+            case .critical: return ("过热", DS.Colors.accent)
+            @unknown default: return ("正常", DS.Colors.success)
             }
         }()
-        return HStack(spacing: 4) {
-            Circle().fill(color).frame(width: 6, height: 6)
-            Text(text).font(.system(size: 10, weight: .medium)).foregroundStyle(color)
+        return HStack(spacing: DS.Space.xs) {
+            Circle().fill(color).frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
+            Text(text).font(DS.Fonts.caption(.medium)).foregroundStyle(color)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(Capsule().fill(color.opacity(0.15)))
-    }
-
-    private func hint(_ text: String) -> some View {
-        Text(text).font(.system(size: 11)).foregroundStyle(Color.gray)
+        .padding(.horizontal, DS.Space.s)
+        .padding(.vertical, DS.Space.xs)
+        .background(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).fill(DS.Colors.fill))
     }
 
     private func speed(_ bytesPerSec: Double) -> String {
@@ -362,25 +366,26 @@ private struct SiteTile: View {
     let site: FavouriteSite
     let action: () -> Void
     @State private var hovering = false
+    private static let hoverScale: CGFloat = 1.08
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 3) {
-                Favicon(host: site.host, size: 24, customPath: site.iconPath)
-                    .padding(6)
-                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(Color.white.opacity(hovering ? 0.14 : 0.07)))
-                    .scaleEffect(hovering ? 1.08 : 1)
+            VStack(spacing: DS.Space.xs) {
+                Favicon(host: site.host, size: DS.Size.favicon, customPath: site.iconPath)
+                    .padding(DS.Space.s)
+                    .background(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                        .fill(hovering ? DS.Colors.fillHover : DS.Colors.fill))
+                    .scaleEffect(hovering ? Self.hoverScale : 1)
                 Text(site.title)
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(hovering ? Color.white : Color.gray)
+                    .font(DS.Fonts.caption)
+                    .foregroundStyle(hovering ? DS.Colors.textPrimary : DS.Colors.textSecondary)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hovering = h } }
+        .onHover { h in withAnimation(DS.Motion.micro) { hovering = h } }
     }
 }
 
@@ -398,7 +403,7 @@ private struct Favicon: View {
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
     }
 
     /// DuckDuckGo returns nothing when a site has no icon, so we fall back to a letter badge
@@ -408,15 +413,15 @@ private struct Favicon: View {
                 image.resizable().interpolation(.high)
             } else {
                 ZStack {
-                    Circle().fill(Color.white.opacity(0.15))
+                    RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).fill(DS.Colors.fillHover)
                     Text(String(host.replacingOccurrences(of: "www.", with: "").prefix(1)).uppercased())
-                        .font(.system(size: size * 0.5, weight: .semibold))
-                        .foregroundStyle(Color.white)
+                        .font(DS.Fonts.body(.semibold))
+                        .foregroundStyle(DS.Colors.textPrimary)
                 }
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
     }
 }
 
@@ -426,25 +431,25 @@ private struct StatRow: View {
     let fraction: Double
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
             HStack {
-                Text(label).font(.system(size: 11)).foregroundStyle(Color.gray)
-                Spacer(minLength: 4)
+                Text(label).font(DS.Fonts.caption).foregroundStyle(DS.Colors.textSecondary)
+                Spacer(minLength: DS.Space.xs)
                 Text(value)
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
-                    .foregroundStyle(Color.white)
+                    .font(DS.Fonts.caption(.medium).monospacedDigit())
+                    .foregroundStyle(DS.Colors.textPrimary)
                     .lineLimit(1)
             }
             GeometryReader { g in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.10))
+                    Capsule().fill(DS.Colors.separator)
                     Capsule()
-                        .fill(fraction > 0.85 ? Color(nsColor: .systemRed) : Color.white.opacity(0.75))
+                        .fill(fraction > AoomooaIdleHomeView.warnFraction ? DS.Colors.warning : DS.Colors.indicator)
                         .frame(width: g.size.width * min(max(fraction, 0), 1))
                 }
             }
-            .frame(height: 3)
-            .animation(.smooth(duration: 0.4), value: fraction)
+            .frame(height: DS.Size.bar)
+            .animation(DS.Motion.panel, value: fraction)
         }
     }
 }
@@ -454,6 +459,8 @@ private struct StatRow: View {
 private struct NowPlayingColumn: View {
     @ObservedObject private var music = MusicManager.shared
     @State private var scrubbing: Double?
+    private static let pausedArtOpacity: Double = 0.6
+    private static let progressTick: TimeInterval = 0.5
 
     var body: some View {
         Group {
@@ -463,67 +470,67 @@ private struct NowPlayingColumn: View {
                 player
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, DS.Space.m)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private var accent: Color {
         Defaults[.playerColorTinting]
             ? Color(nsColor: music.avgColor).ensureMinimumBrightness(factor: 0.6)
-            : Color.white
+            : DS.Colors.indicator
     }
 
     private var placeholder: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: DS.Space.s) {
             Image(systemName: "music.note")
-                .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(Color.gray)
+                .font(DS.Fonts.title)
+                .foregroundStyle(DS.Colors.textSecondary)
             Text("没有在播放")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.gray)
+                .font(DS.Fonts.body(.medium))
+                .foregroundStyle(DS.Colors.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var player: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: DS.Space.s) {
+            HStack(spacing: DS.Space.m) {
                 Button { music.openMusicApp() } label: {
                     Image(nsImage: music.albumArt)
                         .resizable()
                         .aspectRatio(1, contentMode: .fill)
-                        .frame(width: 54, height: 54)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .opacity(music.isPlaying ? 1 : 0.6)
+                        .frame(width: DS.Size.artwork, height: DS.Size.artwork)
+                        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+                        .opacity(music.isPlaying ? 1 : Self.pausedArtOpacity)
                 }
                 .buttonStyle(.plain)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DS.Space.xs) {
                     Text(music.songTitle)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.white)
+                        .font(DS.Fonts.body(.semibold))
+                        .foregroundStyle(DS.Colors.textPrimary)
                         .lineLimit(2)
                     Text(music.artistName)
-                        .font(.system(size: 11))
-                        .foregroundStyle(accent.opacity(0.85))
+                        .font(DS.Fonts.caption)
+                        .foregroundStyle(accent)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
 
-            TimelineView(.periodic(from: .now, by: 0.5)) { context in
+            TimelineView(.periodic(from: .now, by: Self.progressTick)) { context in
                 let duration = max(music.songDuration, 0)
                 let live = min(music.estimatedPlaybackPosition(at: context.date), duration)
                 let position = scrubbing ?? live
-                VStack(spacing: 3) {
+                VStack(spacing: DS.Space.xs) {
                     GeometryReader { g in
                         let fraction = duration > 0 ? position / duration : 0
                         ZStack(alignment: .leading) {
-                            Capsule().fill(Color.white.opacity(0.15))
+                            Capsule().fill(DS.Colors.separator)
                             Capsule().fill(accent)
                                 .frame(width: g.size.width * CGFloat(min(max(fraction, 0), 1)))
                         }
-                        .frame(height: scrubbing == nil ? 4 : 6)
+                        .frame(height: scrubbing == nil ? DS.Size.bar : DS.Size.barActive)
                         .frame(maxHeight: .infinity)
                         .contentShape(Rectangle())
                         .gesture(
@@ -538,34 +545,34 @@ private struct NowPlayingColumn: View {
                                 }
                         )
                     }
-                    .frame(height: 10)
+                    .frame(height: DS.Size.barHitArea)
                     HStack {
                         Text(clock(position))
                         Spacer()
                         Text(clock(duration))
                     }
-                    .font(.system(size: 10).monospacedDigit())
-                    .foregroundStyle(Color.gray)
+                    .font(DS.Fonts.caption.monospacedDigit())
+                    .foregroundStyle(DS.Colors.textSecondary)
                 }
             }
 
-            HStack(spacing: 26) {
+            HStack(spacing: DS.Space.l) {
                 Spacer(minLength: 0)
-                control("backward.fill", size: 14) { music.previousTrack() }
-                control(music.isPlaying ? "pause.fill" : "play.fill", size: 20) { music.togglePlay() }
-                control("forward.fill", size: 14) { music.nextTrack() }
+                control("backward.fill", font: DS.Fonts.body(.semibold)) { music.previousTrack() }
+                control(music.isPlaying ? "pause.fill" : "play.fill", font: DS.Fonts.title) { music.togglePlay() }
+                control("forward.fill", font: DS.Fonts.body(.semibold)) { music.nextTrack() }
                 Spacer(minLength: 0)
             }
         }
     }
 
-    private func control(_ symbol: String, size: CGFloat, action: @escaping () -> Void) -> some View {
+    private func control(_ symbol: String, font: Font, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: size, weight: .semibold))
-                .foregroundStyle(Color.white)
+                .font(font)
+                .foregroundStyle(DS.Colors.textPrimary)
                 .contentTransition(.symbolEffect(.replace))
-                .frame(width: 30, height: 26)
+                .frame(width: DS.Size.mediaButton, height: DS.Size.mediaButton)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -1,36 +1,32 @@
 //
-//  AoomooaHover.swift — aoomooa: two-stage hover tuning
+//  AoomooaHover.swift — aoomooa: 悬停与手势参数
+//
+//  时长类数值来自 设置 → aoomooa（AoomooaPrefs），动画曲线来自 DesignTokens（DS.Motion）。
+//  这里只留手势判定用的常量。
 //
 
 import SwiftUI
 
 enum AoomooaHover {
-    /// STAGE1_DELAY_MS — how long stage 1 stays before full expand (1.5–2.0 s)
-    static let stage1Delay: TimeInterval = 1.8
-    /// Expand: smooth, no bounce, Dock-like (seconds)
-    static let expandTransition: Double = 0.26
-    /// Collapse: quick smooth slide back (seconds). Set to 0 for an instant collapse.
-    static let collapseTransition: Double = 0.16
-    /// EXIT_GRACE_MS — confirm the mouse really left before collapsing (filters layout jitter)
+    /// 悬停多久后从第一阶段展开（设置里 0.2–1.0 秒）
+    static var stage1Delay: TimeInterval { AoomooaPrefs.hoverDelay }
+    /// 确认鼠标真的离开后才收起（过滤布局抖动）
     static let exitGraceMs: Int = 80
-    /// Two-finger swipe distance to hide / bring back the live activity (up / down)
+    /// 双指上/下滑隐藏/恢复音乐实时活动需要的距离
     static let swipeDistance: CGFloat = 60
-    /// Two-finger swipe distance to change page (left / right) — bigger = less sensitive
-    static let tabSwipeDistance: CGFloat = 120
-    /// After a page change, ignore further swipes for this long (seconds)
+    /// 双指左/右滑切页需要的距离（设置里的“左右滑灵敏度”）
+    static var tabSwipeDistance: CGFloat { AoomooaPrefs.tabSwipeDistance }
+    /// 切页后这段时间内不再响应（秒）
     static let tabSwipeCooldown: Double = 0.6
-    /// How far the page follows your fingers before it switches (points)
+    /// 切页前页面跟手移动的最大距离
     static let tabSwipeFollow: CGFloat = 18
+    /// 第一页/最后一页继续滑时只拉伸这么多（橡皮筋）
+    static let rubberBand: CGFloat = 0.4
 
-    static var expandAnimation: Animation { .smooth(duration: expandTransition) }
-    static var collapseAnimation: Animation? {
-        collapseTransition > 0 ? .smooth(duration: collapseTransition) : nil
-    }
+    /// 面板展开 / 收起都用面板档动画
+    static var expandAnimation: Animation { DS.Motion.panel }
+    static var collapseAnimation: Animation? { DS.Motion.panel }
 
-    /// A transaction that applies changes instantly, with no animation
-    static var instant: Transaction {
-        var t = Transaction()
-        t.disablesAnimations = true
-        return t
-    }
+    /// 立即生效、不带动画
+    static var instant: Transaction { DS.Motion.instant }
 }

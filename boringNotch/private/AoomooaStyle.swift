@@ -1,5 +1,5 @@
 //
-//  AoomooaStyle.swift — aoomooa: look and feel
+//  AoomooaStyle.swift — aoomooa: 外观（数值全部来自 DesignTokens / AoomooaPrefs）
 //
 
 import SwiftUI
@@ -8,23 +8,25 @@ enum AoomooaStyle {
     /// Pages reachable with a two-finger left/right swipe, in order
     static let swipeOrder: [NotchViews] = [.home, .reminders, .shelf]
 
-    /// How strongly the open notch takes the album-art colour (0 = pure black, 1 = full colour)
-    static let tintStrength: Double = 0.55
-    /// How long the colour takes to change when the song changes
-    static let tintFade: Double = 0.5
+    /// 展开后背景取封面颜色的强度（设置里 0–100%）
+    static var tintStrength: Double { AoomooaPrefs.tintStrength }
 
     /// Tab change: new page drops in from above, old page fades out
     static var tabTransition: AnyTransition {
-        .asymmetric(insertion: .offset(y: -14).combined(with: .opacity),
+        .asymmetric(insertion: .offset(y: -DS.Space.m).combined(with: .opacity),
                     removal: .opacity)
     }
 
-    /// Hover streamline: colours from tail (left) to bright head (right)
-    static let streakColors: [Color] = [
-        Color(red: 0.45, green: 0.80, blue: 1.0).opacity(0.7),
-        Color(red: 0.75, green: 0.60, blue: 1.0).opacity(0.9),
-        Color.white
-    ]
+    /// 左右滑页时新页面从滑动方向进入的距离
+    static let swipeTransitionOffset: CGFloat = 70
+
+    /// 悬停流光：尾部强调色 → 亮白色头部（只用唯一强调色）
+    static var streakColors: [Color] {
+        [DS.Colors.accent.opacity(0.5), DS.Colors.accent, DS.Colors.textPrimary]
+    }
+    /// 流光外发光
+    static let streakGlowBlur: CGFloat = 3
+    static let streakGlowOpacity: Double = 0.7
     /// Line thickness
     static let streakHeight: CGFloat = 2
     /// Distance outside the notch edge
@@ -89,8 +91,8 @@ struct AoomooaOutlineStreak: View {
                 shape.trim(from: 0, to: progress)
                     .stroke(gradient, style: StrokeStyle(lineWidth: AoomooaStyle.streakHeight * 2,
                                                          lineCap: .round, lineJoin: .round))
-                    .blur(radius: 3)
-                    .opacity(0.7)
+                    .blur(radius: AoomooaStyle.streakGlowBlur)
+                    .opacity(AoomooaStyle.streakGlowOpacity)
                 shape.trim(from: 0, to: progress)
                     .stroke(gradient, style: StrokeStyle(lineWidth: AoomooaStyle.streakHeight,
                                                          lineCap: .round, lineJoin: .round))

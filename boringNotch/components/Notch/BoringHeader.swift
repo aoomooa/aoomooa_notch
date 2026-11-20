@@ -48,10 +48,10 @@ struct BoringHeader: View {
                             }) {
                                 Capsule()
                                     .fill(.black)
-                                    .frame(width: 30, height: 30)
+                                    .frame(width: DS.Size.control, height: DS.Size.control)
                                     .overlay {
                                         Image(systemName: "web.camera")
-                                            .foregroundColor(.white)
+                                            .foregroundColor(DS.Colors.textPrimary)
                                             .padding()
                                             .imageScale(.medium)
                                     }
@@ -60,16 +60,16 @@ struct BoringHeader: View {
                         }
                         // aoomooa: Tray button, left of the settings gear
                         Button(action: {
-                            withAnimation(.smooth(duration: 0.3)) {
+                            withAnimation(DS.Motion.page) {
                                 coordinator.currentView = coordinator.currentView == .shelf ? .home : .shelf
                             }
                         }) {
                             Capsule()
-                                .fill(coordinator.currentView == .shelf ? Color(nsColor: .secondarySystemFill) : Color.black)
-                                .frame(width: 30, height: 30)
+                                .fill(coordinator.currentView == .shelf ? DS.Colors.fillHover : DS.Colors.background)
+                                .frame(width: DS.Size.control, height: DS.Size.control)
                                 .overlay {
                                     Image(systemName: "tray.full")
-                                        .foregroundColor(coordinator.currentView == .shelf ? .white : .gray)
+                                        .foregroundColor(coordinator.currentView == .shelf ? DS.Colors.textPrimary : DS.Colors.textSecondary)
                                         .imageScale(.medium)
                                 }
                         }
@@ -83,10 +83,10 @@ struct BoringHeader: View {
                             }) {
                                 Capsule()
                                     .fill(.black)
-                                    .frame(width: 30, height: 30)
+                                    .frame(width: DS.Size.control, height: DS.Size.control)
                                     .overlay {
                                         Image(systemName: "gear")
-                                            .foregroundColor(.white)
+                                            .foregroundColor(DS.Colors.textPrimary)
                                             .padding()
                                             .imageScale(.medium)
                                     }
@@ -108,13 +108,13 @@ struct BoringHeader: View {
                     }
                 }
             }
-            .font(.system(.headline, design: .rounded))
+            .font(DS.Fonts.body(.semibold))
             .frame(maxWidth: .infinity, alignment: .trailing)
             .opacity(vm.notchState == .closed ? 0 : 1)
             .blur(radius: vm.notchState == .closed ? 20 : 0)
             .zIndex(2)
         }
-        .foregroundColor(.gray)
+        .foregroundColor(DS.Colors.textSecondary)
         .environmentObject(vm)
     }
 
