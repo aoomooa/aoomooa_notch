@@ -48,20 +48,32 @@ final class FavouriteSitesModel: ObservableObject {
         } else {
             sites = Self.defaults
         }
-        prefetchIcons()
+        refreshIcons()
     }
 
-    /// 启动时在后台把图标都取好存进缓存，打开刘海时不闪
-    private func prefetchIcons() {
-        let list = sites
-        Task.detached(priority: .utility) {
-            for site in list where site.iconPath == nil {
-                _ = await SiteIconCache.shared.load(site: site)
+    private var refreshingIcons = false
+
+    /// 在后台检查图标：没有缓存或缓存超过一天的才联网；网站换了 logo 会自动换上。
+    /// force = 不管缓存新旧，全部重新检查（设置里的“重新获取所有图标”）
+    func refreshIcons(force: Bool = false) {
+        guard !refreshingIcons else { return }
+        refreshingIcons = true
+        let list = sites.filter { $0.iconPath == nil }
+        Task.detached(priority: .utility) { [weak self] in
+            var changed = false
+            for site in list {
+                if await SiteIconCache.shared.refresh(site: site, force: force) != nil { changed = true }
+            }
+            let didChange = changed
+            await MainActor.run {
+                guard let self else { return }
+                self.refreshingIcons = false
+                if didChange || force { self.iconRevision += 1 }
             }
         }
     }
 
-    /// 清掉缓存，重新联网取网站图标
+    /// 清掉这个网站的缓存，马上重新联网取
     func refetchIcon(for site: FavouriteSite) {
         SiteIconCache.shared.clear(host: site.host)
         iconRevision += 1
@@ -306,7 +318,10 @@ struct AoomooaIdleHomeView: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .onAppear { status.start() }
+        .onAppear {
+            status.start()
+            sites.refreshIcons()   // 缓存超过一天的图标在后台重新检查
+        }
         .onDisappear { status.stop() }
     }
 

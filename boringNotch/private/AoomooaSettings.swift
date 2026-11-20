@@ -98,12 +98,19 @@ struct AoomooaSettingsView: View {
         Section {
             ForEach(Array(sites.sites.enumerated()), id: \.element.id) { index, site in
                 HStack(spacing: DS.Space.s) {
+                    SiteIconView(site: site, size: DS.Size.appIconMin, revision: sites.iconRevision)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(site.title)
                         Text(site.url)
                             .font(DS.Fonts.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                        Text("图标：" + (site.iconPath != nil ? "自己选的图片" : SiteIconCache.shared.sourceDescription(host: site.host)))
+                            .font(DS.Fonts.caption)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
                     }
                     Spacer(minLength: DS.Space.s)
                     Button { sites.move(site, by: -1) } label: { Image(systemName: "chevron.up") }
@@ -112,6 +119,9 @@ struct AoomooaSettingsView: View {
                     Button { sites.move(site, by: 1) } label: { Image(systemName: "chevron.down") }
                         .disabled(index == sites.sites.count - 1)
                         .help("下移")
+                    Button { sites.refetchIcon(for: site) } label: { Image(systemName: "arrow.clockwise") }
+                        .disabled(site.iconPath != nil)
+                        .help("重新获取图标")
                     Button { sites.remove(site) } label: { Image(systemName: "trash") }
                         .help("删除")
                 }
@@ -136,12 +146,15 @@ struct AoomooaSettingsView: View {
             HStack {
                 Text("常用网站")
                 Spacer()
+                Button("重新获取所有图标") { sites.refreshIcons(force: true) }
+                    .buttonStyle(.borderless)
+                    .font(DS.Fonts.caption)
                 Button("恢复默认网站") { sites.resetToDefaults() }
                     .buttonStyle(.borderless)
                     .font(DS.Fonts.caption)
             }
         } footer: {
-            Text("在刘海首页右键网站，也可以更换图标、添加或移除。")
+            Text("图标会按顺序找：网页里声明的 apple-touch-icon / icon → 网站根目录的 apple-touch-icon.png → Google / DuckDuckGo 图标服务。缓存超过一天会自动重新检查；网站刚换 logo 可以点 ↻ 立即更新。在刘海首页右键网站也能更换图标。")
                 .font(DS.Fonts.caption)
                 .foregroundStyle(.secondary)
         }

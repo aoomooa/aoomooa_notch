@@ -26,7 +26,11 @@ final class SiteIconCache: @unchecked Sendable {
     }
 
     /// 全部来源都失败后，多久再试（秒）
-    static let retryFailedAfter: TimeInterval = 24 * 60 * 60
+    static let retryFailedAfter: TimeInterval = 10 * 60
+    /// 已缓存的图标多久在后台重新检查一次（网站换了 logo 也能跟上）
+    static let refreshAfter: TimeInterval = 24 * 60 * 60
+    /// SVG 图标画成多大的位图（像素）
+    static let rasterSide = 256
     /// 单个请求超时（秒）
     static let timeout: TimeInterval = 8
     /// 只读网页开头这么多字节找 <link>
@@ -73,7 +77,38 @@ final class SiteIconCache: @unchecked Sendable {
         let host = site.host
         if let hit = cached(host: host) { return hit }
         if recentlyFailed(host: host) { return nil }
+        return await fetchOnce(site)
+    }
 
+    /// 缓存过期了（或者还没有）就重新联网检查；拿到新的就替换，失败就继续用旧的
+    @discardableResult
+    func refresh(site: FavouriteSite, force: Bool = false) async -> Icon? {
+        let host = site.host
+        if !force {
+            guard isStale(host: host), !recentlyFailed(host: host) else { return nil }
+        }
+        if force, let marker = failedMarkerURL(host: host) { try? FileManager.default.removeItem(at: marker) }
+        return await fetchOnce(site)
+    }
+
+    /// 没有缓存，或者缓存比 refreshAfter 旧
+    func isStale(host: String) -> Bool {
+        guard let date = cacheDate(host: host) else { return true }
+        return Date().timeIntervalSince(date) > Self.refreshAfter
+    }
+
+    /// 设置页显示：这个网站的图标是从哪儿来的
+    func sourceDescription(host: String) -> String {
+        if let url = sourceURL(host: host), let text = try? String(contentsOf: url, encoding: .utf8), !text.isEmpty {
+            return text
+        }
+        if cacheDate(host: host) != nil { return "已缓存" }
+        if recentlyFailed(host: host) { return "没找到图标，暂时显示首字母（10 分钟后会再试）" }
+        return "还没获取"
+    }
+
+    private func fetchOnce(_ site: FavouriteSite) async -> Icon? {
+        let host = site.host
         lock.lock()
         if let running = inflight[host] {
             lock.unlock()
@@ -87,7 +122,13 @@ final class SiteIconCache: @unchecked Sendable {
         lock.lock()
         inflight[host] = nil
         lock.unlock()
-        if result == nil { markFailed(host: host) }
+        if result == nil {
+            if cacheDate(host: host) == nil {
+                markFailed(host: host)
+            } else {
+                touchCache(host: host)   // 有旧图标就继续用，过一阵再查
+            }
+        }
         return result
     }
 
@@ -98,6 +139,7 @@ final class SiteIconCache: @unchecked Sendable {
             if let url = fileURL(host: host, fullBleed: full) { try? FileManager.default.removeItem(at: url) }
         }
         if let url = failedMarkerURL(host: host) { try? FileManager.default.removeItem(at: url) }
+        if let url = sourceURL(host: host) { try? FileManager.default.removeItem(at: url) }
     }
 
     // MARK: 联网
@@ -110,25 +152,25 @@ final class SiteIconCache: @unchecked Sendable {
         for candidate in await linkedIcons(page: page) {
             let min = candidate.fullBleed ? Self.minTouchIconPixels : Self.minFaviconPixels
             if let image = await download(candidate.url, minPixels: min) {
-                return store(image, host: host, fullBleed: candidate.fullBleed)
+                return store(image, host: host, fullBleed: candidate.fullBleed, source: candidate.url.absoluteString)
             }
         }
         // 2. 约定位置的 apple-touch-icon
         if let url = URL(string: "https://\(host)/apple-touch-icon.png"),
            let image = await download(url, minPixels: Self.minTouchIconPixels) {
-            return store(image, host: host, fullBleed: true)
+            return store(image, host: host, fullBleed: true, source: url.absoluteString)
         }
         // 3 / 4. 图标服务：子域名，再主域名
         for domain in Self.domains(for: host) {
             if let url = URL(string: "https://www.google.com/s2/favicons?domain=\(domain)&sz=128"),
                let image = await download(url, minPixels: Self.preferredFaviconPixels) {
-                return store(image, host: host, fullBleed: false)
+                return store(image, host: host, fullBleed: false, source: "Google 图标服务（\(domain)）")
             }
         }
         for domain in Self.domains(for: host) {
             if let url = URL(string: "https://icons.duckduckgo.com/ip3/\(domain).ico"),
                let image = await download(url, minPixels: Self.minFaviconPixels) {
-                return store(image, host: host, fullBleed: false)
+                return store(image, host: host, fullBleed: false, source: "DuckDuckGo 图标服务（\(domain)）")
             }
         }
         return nil
@@ -142,7 +184,7 @@ final class SiteIconCache: @unchecked Sendable {
 
     /// 从网页 <link rel="apple-touch-icon"> / <link rel="icon"> 里找图标，大的、App 图标优先
     private func linkedIcons(page: URL) async -> [Candidate] {
-        var request = URLRequest(url: page, timeoutInterval: Self.timeout)
+        var request = URLRequest(url: page, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: Self.timeout)
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         guard let result = try? await URLSession.shared.data(for: request),
               let http = result.1 as? HTTPURLResponse, http.statusCode == 200 else { return [] }
@@ -173,13 +215,38 @@ final class SiteIconCache: @unchecked Sendable {
     }
 
     private func download(_ url: URL, minPixels: Int) async -> NSImage? {
-        var request = URLRequest(url: url, timeoutInterval: Self.timeout)
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: Self.timeout)
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         guard let result = try? await URLSession.shared.data(for: request),
               let http = result.1 as? HTTPURLResponse, http.statusCode == 200,
               let image = NSImage(data: result.0) else { return nil }
         let pixels = image.representations.map { max($0.pixelsWide, $0.pixelsHigh) }.max() ?? 0
-        return pixels >= minPixels ? image : nil
+        if pixels >= minPixels { return image }
+        // SVG 之类的矢量图没有像素尺寸：画成位图再用
+        if pixels <= 0, image.size.width > 0, image.size.height > 0 {
+            return Self.rasterize(image, side: Self.rasterSide)
+        }
+        return nil
+    }
+
+    /// 把矢量图按比例画进一张正方形位图
+    static func rasterize(_ image: NSImage, side: Int) -> NSImage? {
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side,
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+              let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
+        let full = CGFloat(side)
+        let scale = min(full / image.size.width, full / image.size.height)
+        let w = image.size.width * scale
+        let h = image.size.height * scale
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        image.draw(in: NSRect(x: (full - w) / 2, y: (full - h) / 2, width: w, height: h),
+                   from: .zero, operation: .sourceOver, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        let output = NSImage(size: NSSize(width: side, height: side))
+        output.addRepresentation(rep)
+        return output
     }
 
     // MARK: 磁盘
@@ -200,8 +267,37 @@ final class SiteIconCache: @unchecked Sendable {
         directory?.appendingPathComponent("\(host).failed")
     }
 
+    private func sourceURL(host: String) -> URL? {
+        directory?.appendingPathComponent("\(host).source")
+    }
+
+    /// 缓存文件的时间（没有缓存 = nil）
+    private func cacheDate(host: String) -> Date? {
+        for full in [true, false] {
+            if let url = fileURL(host: host, fullBleed: full),
+               let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+               let date = attrs[.modificationDate] as? Date {
+                return date
+            }
+        }
+        return nil
+    }
+
+    /// 检查过但没换：把缓存时间改成现在，过 refreshAfter 再查
+    private func touchCache(host: String) {
+        for full in [true, false] {
+            if let url = fileURL(host: host, fullBleed: full), FileManager.default.fileExists(atPath: url.path) {
+                try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
+            }
+        }
+    }
+
     /// 存成 PNG（ICO 里有多张就取最大的那张）
-    private func store(_ image: NSImage, host: String, fullBleed: Bool) -> Icon {
+    private func store(_ image: NSImage, host: String, fullBleed: Bool, source: String) -> Icon {
+        // 换了来源（比如从小 favicon 变成 App 图标）就删掉另一种旧文件
+        if let other = fileURL(host: host, fullBleed: !fullBleed) { try? FileManager.default.removeItem(at: other) }
+        if let marker = failedMarkerURL(host: host) { try? FileManager.default.removeItem(at: marker) }
+        if let url = sourceURL(host: host) { try? source.write(to: url, atomically: true, encoding: .utf8) }
         let best = image.representations
             .compactMap { $0 as? NSBitmapImageRep }
             .max { $0.pixelsWide < $1.pixelsWide }
