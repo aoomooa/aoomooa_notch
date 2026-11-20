@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/aoomooa/aoomooa_notch/releases/latest/download/aoomooa-notch.dmg"><strong>下载 DMG</strong></a>
   ·
-  <a href="https://aoomooa.art/notch">项目页</a>
+  <a href="https://aoomooa.art/notch/">项目页</a>
   ·
   <a href="https://github.com/TheBoredTeam/boring.notch">上游 Boring Notch</a>
 </p>
@@ -67,7 +67,7 @@ open boringNotch.xcodeproj
 - 本仓库代码以 **GNU GPLv3** 发布，完整文本见 [LICENSE](LICENSE)。
 - 上游项目：[TheBoredTeam/boring.notch](https://github.com/TheBoredTeam/boring.notch)。
 - 本 fork 的修改、来源和版权说明见 [NOTICE.md](NOTICE.md)。
-- 项目页：[https://aoomooa.art/notch](https://aoomooa.art/notch)。
+- 项目页：[https://aoomooa.art/notch/](https://aoomooa.art/notch/)。
 
 如果你是分发这个 fork 的修改版，请保留 GPLv3、保留上游署名，并公开对应源码。
 
