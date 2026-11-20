@@ -41,6 +41,8 @@ enum DS {
         static let textPrimary = Color.white
         static let textSecondary = Color.white.opacity(0.55)
         static let textTertiary = Color.white.opacity(0.3)
+        /// 功能模块的底（极淡，用来分区，代替分割线）
+        static let module = Color.white.opacity(0.04)
         /// 卡片 / 输入框 / 按钮底
         static let fill = Color.white.opacity(0.08)
         /// 悬停 / 选中的底
@@ -52,6 +54,8 @@ enum DS {
         /// 悬浮标签的底
         static let overlay = Color.black.opacity(0.75)
         static let background = Color.black
+        /// 网站小图标（favicon）垫底的白色圆角方块，像 Safari 个人收藏
+        static let iconPlate = Color(white: 0.96)
     }
 
     // MARK: - 字号（三档）
@@ -69,6 +73,12 @@ enum DS {
         static func body(_ weight: Font.Weight) -> Font { .system(size: bodySize, weight: weight) }
         /// 20pt 圆体：日历月份 / 大标题 / 主按钮图标
         static let title = Font.system(size: titleSize, weight: .bold, design: .rounded)
+
+        /// 11pt 一行文字的高度（排版计算用；中文字形略高，多留 2pt）
+        static var captionLineHeight: CGFloat {
+            let f = NSFont.systemFont(ofSize: captionSize)
+            return ceil(f.ascender - f.descender + f.leading) + 2
+        }
     }
 
     // MARK: - 圆角（三档）
@@ -78,8 +88,10 @@ enum DS {
         static let small: CGFloat = 6
         /// 卡片 / 列表项
         static let card: CGFloat = 10
-        /// 面板 / 容器
+        /// 面板 / 容器 / 功能模块
         static let panel: CGFloat = 16
+        /// 图标的系统圆角（squircle）：圆角 = 边长 × 这个比例。和刘海外形一样，不算 UI 圆角档位
+        static let iconRatio: CGFloat = 0.2237
     }
 
     // MARK: - 间距（四档）
@@ -112,12 +124,23 @@ enum DS {
         /// 页面转场（切换标签、左右滑页）
         static var page: Animation { .spring(response: pageDuration, dampingFraction: damping) }
 
+        /// 按下时缩小到这个比例（原生按钮的轻微反馈）
+        static let pressScale: CGFloat = 0.94
+
         /// 不要动画，立即生效
         static var instant: Transaction {
             var t = Transaction()
             t.disablesAnimations = true
             return t
         }
+    }
+
+    // MARK: - 阴影（只给图标用，很轻）
+
+    enum Shadow {
+        static let iconColor = Color.black.opacity(0.35)
+        static let iconRadius: CGFloat = 1.5
+        static let iconY: CGFloat = 1
     }
 
     // MARK: - 控件尺寸（不是规范档位，只是集中起来，别在视图里写）
@@ -131,13 +154,13 @@ enum DS {
         static let mediaButton: CGFloat = 30
         /// 封面
         static let artwork: CGFloat = 54
-        /// 启动台图标（最大静止尺寸 / 最小尺寸）
+        /// 启动器 / 常用网站图标（最大 / 最小）
         static let appIcon: CGFloat = 38
         static let appIconMin: CGFloat = 20
-        /// 网站图标
-        static let favicon: CGFloat = 24
-        /// 日历条：每天的宽度、整条高度
-        static let dayWidth: CGFloat = 30
+        /// 网站小图标放在白底上时占的比例
+        static let faviconInset: CGFloat = 0.62
+        /// 日历条：日期圆圈直径、整条高度
+        static let dayCircle: CGFloat = 22
         static let dayStripHeight: CGFloat = 46
         /// 小圆点（日程、运行中）
         static let dot: CGFloat = 4
@@ -148,8 +171,9 @@ enum DS {
         static let barActive: CGFloat = 6
         /// 进度条的点击区高度
         static let barHitArea: CGFloat = 12
-        /// 分隔线 / 日程色条宽度
-        static let hairline: CGFloat = 1
+        /// 拖文件进来时的虚线框粗细
+        static let dropBorder: CGFloat = 2
+        /// 日程色条宽度
         static let eventBar: CGFloat = 3
         /// 列表行里图标的高度
         static let rowIcon: CGFloat = 14

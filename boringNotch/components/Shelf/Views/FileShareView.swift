@@ -41,20 +41,14 @@ struct FileShareView: View {
 
     private var dropArea: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .fill(
-                    DS.Colors.fill
-                )
+            // aoomooa: 和其它模块一样的极淡底色，没有虚线和阴影；拖文件进来时才出现红色虚线
+            RoundedRectangle(cornerRadius: DS.Radius.panel, style: .continuous)
+                .fill(vm.dropZoneTargeting ? DS.Colors.accentSoft : DS.Colors.module)
                 .overlay(
-                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                        .stroke(
-                            vm.dropZoneTargeting
-                                ? DS.Colors.accent
-                                : DS.Colors.separator,
-                            style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [10])
-                        )
+                    RoundedRectangle(cornerRadius: DS.Radius.panel, style: .continuous)
+                        .strokeBorder(vm.dropZoneTargeting ? DS.Colors.accent : Color.clear,
+                                      style: StrokeStyle(lineWidth: DS.Size.dropBorder, lineCap: .round, dash: [DS.Space.s]))
                 )
-                .shadow(color: Color.black.opacity(0.6), radius: 6, x: 0, y: 2)
 
             // Content
             VStack(spacing: DS.Space.xs) {
@@ -91,7 +85,7 @@ struct FileShareView: View {
             
             // Loading overlay
             if isProcessing || quickShare.isPickerOpen {
-                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.panel, style: .continuous)
                     .fill(DS.Colors.overlay)
                     .overlay(
                         ProgressView()
@@ -100,7 +94,7 @@ struct FileShareView: View {
                     )
             }
         }
-        .contentShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: DS.Radius.panel, style: .continuous))
     }
 
     // MARK: - Actions

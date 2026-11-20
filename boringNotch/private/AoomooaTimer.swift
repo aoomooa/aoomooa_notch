@@ -164,18 +164,19 @@ struct NotchTimerView: View {
 
     var body: some View {
         GeometryReader { g in
-            HStack(alignment: .top, spacing: DS.Space.m) {
-                column("天气", "cloud.sun") {
+            // 两个模块：极淡的底 + 面板圆角，中间只留间距，不画线
+            HStack(alignment: .top, spacing: DS.Space.l) {
+                module("天气", "cloud.sun") {
                     AoomooaWeatherCard()
                 }
-                .frame(width: (g.size.width - DS.Space.m) * Self.weatherShare)
+                .frame(width: (g.size.width - DS.Space.l) * Self.weatherShare)
 
-                column("计时器", "timer") {
+                module("计时器", "timer") {
                     Group {
                         switch timer.phase {
                         case .idle: picker
-                        case .running, .paused: card { running }
-                        case .finished: card { finished }
+                        case .running, .paused: running
+                        case .finished: finished
                         }
                     }
                     .transition(.opacity)
@@ -183,14 +184,12 @@ struct NotchTimerView: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .padding(.horizontal, DS.Space.m)
-        .padding(.bottom, DS.Space.xs)
         .animation(DS.Motion.micro, value: timer.phase)
         .onAppear { weather.refreshIfStale() }
     }
 
-    /// 一栏：小标题 + 撑满剩余高度的内容（左右两栏标题同高，内容上下对齐）
-    private func column<Content: View>(_ title: String, _ icon: String,
+    /// 一个模块：小标题 + 撑满剩余高度的内容（左右两个模块标题同高，内容上下对齐）
+    private func module<Content: View>(_ title: String, _ icon: String,
                                        @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.s) {
             HStack(spacing: DS.Space.xs) {
@@ -201,15 +200,9 @@ struct NotchTimerView: View {
             .foregroundStyle(DS.Colors.textSecondary)
 
             content()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
-    }
-
-    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        content()
-            .padding(.horizontal, DS.Space.m)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Colors.fill))
+        .aoomooaModule()
     }
 
     // 选时长：四个快捷时长 + 自定义滚轮
@@ -324,7 +317,7 @@ private struct TimerPresetTile: View {
                 .fill(hovering ? DS.Colors.fillHover : DS.Colors.fill))
             .contentShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AoomooaPressStyle())
         .onHover { h in withAnimation(DS.Motion.micro) { hovering = h } }
     }
 }
@@ -354,7 +347,7 @@ struct AoomooaPillButton: View {
             .opacity(prominent && hovering ? Self.hoverDim : 1)
             .contentShape(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AoomooaPressStyle())
         .onHover { h in withAnimation(DS.Motion.micro) { hovering = h } }
     }
 }

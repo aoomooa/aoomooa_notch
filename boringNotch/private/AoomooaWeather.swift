@@ -227,10 +227,8 @@ struct AoomooaWeatherCard: View {
                 placeholder(icon: "cloud.slash", text: weather.lastFailed ? "天气暂时不可用，点按重试" : "点按获取天气")
             }
         }
-        .padding(DS.Space.m)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Colors.fill))
-        .contentShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .contentShape(Rectangle())
         .onTapGesture {
             if weather.snapshot == nil { weather.refresh() } else { Self.openWeatherApp() }
         }

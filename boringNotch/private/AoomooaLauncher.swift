@@ -87,131 +87,51 @@ struct NotchLauncherView: View {
     @EnvironmentObject var vm: BoringViewModel
     @ObservedObject private var model = NotchLauncherModel.shared
 
-    @State private var hover: CGPoint?
-    @State private var bouncing: String?
-    @State private var running: Set<String> = []
-
-    // Grid + Dock feel — tweak freely
-    private let maxIcon: CGFloat = DS.Size.appIcon   // largest resting icon size
-    private let minColumns = 4              // at least this many per row
-    private let maxRows = 3                 // grows to 2–3 rows (4 when you add lots)
-    private let maxScale: CGFloat = 1.32    // magnification right under the cursor
-    private let spread: CGFloat = 36        // how far the magnification reaches
-    private let labelShowsAt: CGFloat = 1.2 // show the name once an icon is this big
-    private let bounceDepth: CGFloat = 8    // launch bounce distance
-
     var body: some View {
-        GeometryReader { geo in
-            let n = max(model.paths.count, 1)
-            let cols = max(minColumns, Int((Double(n) / Double(maxRows)).rounded(.up)))
-            let rows = max(1, Int((Double(n) / Double(cols)).rounded(.up)))
-            let cellW = geo.size.width / CGFloat(cols)
-            let cellH = min(geo.size.height / CGFloat(rows), cellW)
-            let icon = max(DS.Size.appIconMin, min(maxIcon, cellW - DS.Space.l - DS.Space.xs, cellH - DS.Space.m - DS.Space.xs))
-            let top = max(0, (geo.size.height - cellH * CGFloat(rows)) / 2)
-
-            ZStack(alignment: .topLeading) {
-                ForEach(Array(model.paths.enumerated()), id: \.element) { index, path in
-                    let center = CGPoint(x: (CGFloat(index % cols) + 0.5) * cellW,
-                                         y: top + (CGFloat(index / cols) + 0.5) * cellH)
-                    let s = scale(at: center)
-                    tile(path, size: icon * s, scale: s)
-                        .position(center)
-                        .zIndex(Double(s))
+        // 和启动台一样：图标 + 名字。悬停底色轻微变亮，按下轻微缩小，没有放大、跳动、发光
+        GeometryReader { g in
+            let grid = AoomooaIconGrid(count: model.paths.count, size: g.size, minColumns: 4)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: DS.Space.s), count: grid.columns),
+                      spacing: DS.Space.s) {
+                ForEach(model.paths, id: \.self) { path in
+                    AoomooaIconTile(title: model.name(path), iconSize: grid.iconSize, action: { launch(path) }) {
+                        Image(nsImage: model.icon(path))
+                            .resizable()
+                            .interpolation(.high)
+                    }
+                    .contextMenu {
+                        Button("从刘海移除") { model.remove(path) }
+                        Button("添加 App…") { model.addViaPicker() }
+                    }
                 }
             }
-            .frame(width: geo.size.width, height: geo.size.height)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             .contentShape(Rectangle())
-            .onContinuousHover { phase in
-                switch phase {
-                case .active(let point): hover = point
-                case .ended: hover = nil
-                }
-            }
-            .animation(DS.Motion.micro, value: hover)
             .contextMenu {
                 Button("添加 App…") { model.addViaPicker() }
             }
         }
-        .padding(.horizontal, DS.Space.xs)
-        .onAppear { refreshRunning() }
     }
 
-    /// 2-D Gaussian falloff around the cursor, like Dock magnification but for a grid
-    private func scale(at center: CGPoint) -> CGFloat {
-        guard let h = hover else { return 1 }
-        let dx = h.x - center.x
-        let dy = h.y - center.y
-        return 1 + (maxScale - 1) * exp(-(dx * dx + dy * dy) / (2 * spread * spread))
-    }
-
-    @ViewBuilder
-    private func tile(_ path: String, size: CGFloat, scale s: CGFloat) -> some View {
-        VStack(spacing: DS.Space.xs) {
-            Image(nsImage: model.icon(path))
-                .resizable()
-                .interpolation(.high)
-                .frame(width: size, height: size)
-                .offset(y: bouncing == path ? bounceDepth : 0)
-            Circle()
-                .fill(running.contains(path) ? DS.Colors.indicator : Color.clear)
-                .frame(width: DS.Size.dot, height: DS.Size.dot)
-        }
-        .overlay(alignment: .bottom) {
-            Text(model.name(path))
-                .font(DS.Fonts.caption(.medium))
-                .foregroundStyle(DS.Colors.textPrimary)
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.horizontal, DS.Space.s)
-                .padding(.vertical, DS.Space.xs)
-                .background(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).fill(DS.Colors.overlay))
-                .overlay(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
-                    .strokeBorder(DS.Colors.separator, lineWidth: DS.Size.hairline))
-                .offset(y: DS.Space.l + DS.Space.xs)
-                .opacity(s > labelShowsAt ? 1 : 0)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { tap(path) }
-        .contextMenu {
-            Button("从刘海移除") { model.remove(path) }
-            Button("添加 App…") { model.addViaPicker() }
-        }
-    }
-
-    private func tap(_ path: String) {
-        // Dock-style launch bounce (away from the edge, i.e. downward), then open and tuck away
-        Task { @MainActor in
-            withAnimation(DS.Motion.micro) { bouncing = path }
-            model.open(path)
-            try? await Task.sleep(for: .seconds(DS.Motion.microDuration))
-            withAnimation(DS.Motion.panel) { bouncing = nil }
-            try? await Task.sleep(for: .seconds(DS.Motion.panelDuration))
-            withAnimation(AoomooaHover.collapseAnimation) { vm.close() }
-            refreshRunning()
-        }
-    }
-
-    private func refreshRunning() {
-        running = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleURL?.path })
+    private func launch(_ path: String) {
+        model.open(path)
+        withAnimation(AoomooaHover.collapseAnimation) { vm.close() }
     }
 }
 
-/// aoomooa: Reminders on the left, the app dock on the right
+/// aoomooa: 左边提醒事项，右边应用 —— 两个模块，用间距分开，不画线
 struct NotchWorkspaceView: View {
     /// 左边提醒事项占的宽度比例
-    private let remindersShare: CGFloat = 0.44
+    private let remindersShare: CGFloat = 0.48
 
     var body: some View {
         GeometryReader { g in
-            HStack(spacing: 0) {
+            HStack(spacing: DS.Space.l) {
                 NotchRemindersView()
-                    .frame(width: g.size.width * remindersShare)
-                Rectangle()
-                    .fill(DS.Colors.separator)
-                    .frame(width: DS.Size.hairline)
-                    .padding(.vertical, DS.Space.m)
+                    .aoomooaModule()
+                    .frame(width: (g.size.width - DS.Space.l) * remindersShare)
                 NotchLauncherView()
+                    .aoomooaModule()
                     .frame(maxWidth: .infinity)
             }
         }

@@ -16,8 +16,24 @@ final class NotchRemindersModel: ObservableObject {
 
     enum Access { case unknown, granted, denied }
 
-    /// Days shown either side of today in the strip
-    static let dayRange = 5
+    /// 日期条显示几周：本周之前 / 之后各几周（每次左右滑翻一整周）
+    static let weeksBefore = 1
+    static let weeksAfter = 2
+    static var weekCount: Int { weeksBefore + 1 + weeksAfter }
+
+    /// 日期条的第一天：本周第一天（跟随系统设置）往前 weeksBefore 周
+    static func stripStart(today: Date = Date()) -> Date {
+        let cal = Calendar.current
+        let weekStart = cal.dateInterval(of: .weekOfYear, for: today)?.start ?? cal.startOfDay(for: today)
+        return cal.date(byAdding: .weekOfYear, value: -weeksBefore, to: weekStart) ?? weekStart
+    }
+
+    /// 某一天在日期条的第几周
+    static func weekIndex(of day: Date) -> Int {
+        let cal = Calendar.current
+        let days = cal.dateComponents([.day], from: stripStart(), to: cal.startOfDay(for: day)).day ?? 0
+        return min(max(days / 7, 0), weekCount - 1)
+    }
     /// 勾选后先停留这么久（看得到对勾）再从列表移除
     static let completeLinger: Double = 0.45
 
@@ -112,9 +128,8 @@ final class NotchRemindersModel: ObservableObject {
             return
         }
         let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        guard let start = cal.date(byAdding: .day, value: -Self.dayRange, to: today),
-              let end = cal.date(byAdding: .day, value: Self.dayRange + 1, to: today) else { return }
+        let start = Self.stripStart()
+        guard let end = cal.date(byAdding: .day, value: Self.weekCount * 7, to: start) else { return }
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
         allEvents = store.events(matching: predicate).sorted { $0.startDate < $1.startDate }
         withAnimation(DS.Motion.micro) { recompute() }
@@ -209,10 +224,6 @@ struct NotchRemindersView: View {
     @State private var draft = ""
     @FocusState private var inputFocused: Bool
     @State private var hoveredDay: Date?
-    /// 悬停某一天时放大
-    private static let dayHoverScale: CGFloat = 1.15
-    /// 日期条左右两端渐隐的比例
-    private static let edgeFade: CGFloat = 0.12
 
     var body: some View {
         Group {
@@ -222,7 +233,6 @@ struct NotchRemindersView: View {
                 listView
             }
         }
-        .padding(.horizontal, DS.Space.m)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { model.start() }
         .onDisappear {
@@ -300,7 +310,7 @@ struct NotchRemindersView: View {
         return Calendar.current.isDateInToday(model.selectedDay) ? "今天没有任何事项" : "这天没有安排"
     }
 
-    // MARK: Calendar header — big month + swipeable day row
+    // MARK: 日历：月份 + 按周分页的日期条（原生滚动，没有自定义弹簧）
 
     private var calendarHeader: some View {
         HStack(alignment: .center, spacing: DS.Space.s) {
@@ -308,74 +318,80 @@ struct NotchRemindersView: View {
                 .font(DS.Fonts.title)
                 .foregroundStyle(DS.Colors.textPrimary)
                 .fixedSize()
-                .contentTransition(.numericText())
             dayStrip
         }
     }
 
-    private var dayStrip: some View {
+    private var weeks: [[Date]] {
         let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        let days = (-NotchRemindersModel.dayRange...NotchRemindersModel.dayRange)
-            .compactMap { cal.date(byAdding: .day, value: $0, to: today) }
-
-        return ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 0) {
-                    ForEach(days, id: \.self) { day in
-                        dayItem(day)
-                            .id(day)
-                            .onTapGesture { model.selectDay(day) }
-                            .onHover { inside in
-                                withAnimation(DS.Motion.micro) {
-                                    if inside { hoveredDay = day } else if hoveredDay == day { hoveredDay = nil }
-                                }
-                            }
-                    }
-                }
-                .padding(.horizontal, DS.Space.m)
-            }
-            .mask(
-                LinearGradient(stops: [.init(color: .clear, location: 0),
-                                       .init(color: .black, location: Self.edgeFade),
-                                       .init(color: .black, location: 1 - Self.edgeFade),
-                                       .init(color: .clear, location: 1)],
-                               startPoint: .leading, endPoint: .trailing)
-            )
-            .onHover { inside in model.isHoveringDayStrip = inside }
-            .onDisappear { model.isHoveringDayStrip = false }
-            .onAppear { proxy.scrollTo(model.selectedDay, anchor: .center) }
-            .onChange(of: model.selectedDay) { _, day in
-                withAnimation(DS.Motion.micro) { proxy.scrollTo(day, anchor: .center) }
-            }
+        let start = NotchRemindersModel.stripStart()
+        return (0..<NotchRemindersModel.weekCount).map { week in
+            (0..<7).compactMap { cal.date(byAdding: .day, value: week * 7 + $0, to: start) }
         }
-        .frame(height: DS.Size.dayStripHeight)
     }
 
-    /// Weekday over the date; today in the accent red, the selected day big and white
+    private var dayStrip: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 0) {
+                    ForEach(Array(weeks.enumerated()), id: \.offset) { index, days in
+                        HStack(spacing: 0) {
+                            ForEach(days, id: \.self) { day in
+                                dayItem(day)
+                                    .frame(maxWidth: .infinity)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { model.selectDay(day) }
+                                    .onHover { inside in
+                                        if inside { hoveredDay = day } else if hoveredDay == day { hoveredDay = nil }
+                                    }
+                            }
+                        }
+                        .containerRelativeFrame(.horizontal)
+                        .id(index)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            // 原生分页：一次翻一整周，松手干脆地停在周的边界上
+            .scrollTargetBehavior(.paging)
+            .frame(height: DS.Size.dayStripHeight)
+            .onHover { inside in model.isHoveringDayStrip = inside }
+            .onDisappear { model.isHoveringDayStrip = false }
+            .onAppear {
+                proxy.scrollTo(NotchRemindersModel.weekIndex(of: model.selectedDay), anchor: .leading)
+            }
+            .onChange(of: model.selectedDay) { _, day in
+                withAnimation(DS.Motion.page) {
+                    proxy.scrollTo(NotchRemindersModel.weekIndex(of: day), anchor: .leading)
+                }
+            }
+        }
+    }
+
+    /// 和系统日历一样：今天 = 红色实心圆，选中 = 浅色圆，有日程 = 下面一个红点
     private func dayItem(_ day: Date) -> some View {
         let cal = Calendar.current
         let selected = cal.isDate(day, inSameDayAs: model.selectedDay)
         let isToday = cal.isDateInToday(day)
         let busy = model.busyDays.contains(cal.startOfDay(for: day))
-        let red = DS.Colors.accent
-        let emphasised = selected || isToday
-        let numberColor: Color = isToday ? red : (selected ? DS.Colors.textPrimary : DS.Colors.textSecondary)
+        let circle: Color = isToday ? DS.Colors.accent
+            : selected ? DS.Colors.fillHover
+            : hoveredDay == day ? DS.Colors.fill
+            : Color.clear
 
         return VStack(spacing: 0) {
-            Text(formatter("EEE").string(from: day))
-                .font(DS.Fonts.caption(.semibold))
-                .foregroundStyle(emphasised ? DS.Colors.textPrimary : DS.Colors.textTertiary)
-            Text(String(format: "%02d", cal.component(.day, from: day)))
-                .font(emphasised ? DS.Fonts.title : DS.Fonts.body(.medium).monospacedDigit())
-                .foregroundStyle(numberColor)
+            Text(formatter("EEEEE").string(from: day))
+                .font(DS.Fonts.caption)
+                .foregroundStyle(isToday || selected ? DS.Colors.textSecondary : DS.Colors.textTertiary)
+            Text(String(cal.component(.day, from: day)))
+                .font(DS.Fonts.body(isToday || selected ? .semibold : .regular).monospacedDigit())
+                .foregroundStyle(isToday || selected ? DS.Colors.textPrimary : DS.Colors.textSecondary)
+                .frame(width: DS.Size.dayCircle, height: DS.Size.dayCircle)
+                .background(Circle().fill(circle))
             Circle()
-                .fill(busy ? red : Color.clear)
+                .fill(busy ? DS.Colors.accent : Color.clear)
                 .frame(width: DS.Size.dot, height: DS.Size.dot)
         }
-        .frame(width: DS.Size.dayWidth)
-        .scaleEffect(hoveredDay == day ? Self.dayHoverScale : 1)
-        .contentShape(Rectangle())
     }
 
     // MARK: Rows

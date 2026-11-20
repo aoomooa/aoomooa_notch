@@ -16,7 +16,7 @@ struct ShelfView: View {
     private let spacing: CGFloat = 8
 
     var body: some View {
-        HStack(spacing: DS.Space.m) {
+        HStack(spacing: DS.Space.l) {
             FileShareView()
                 .aspectRatio(1, contentMode: .fit)
                 .environmentObject(vm)
@@ -59,13 +59,14 @@ struct ShelfView: View {
     }
 
     var panel: some View {
+        // aoomooa: 平时只是一块极淡的底（没有虚线框）；拖文件进来时才出现红色虚线
         RoundedRectangle(cornerRadius: DS.Radius.panel, style: .continuous)
-            .stroke(
-                vm.dragDetectorTargeting
-                    ? DS.Colors.accent
-                    : DS.Colors.separator,
-                style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [10])
-            )
+            .fill(vm.dragDetectorTargeting ? DS.Colors.accentSoft : DS.Colors.module)
+            .overlay {
+                RoundedRectangle(cornerRadius: DS.Radius.panel, style: .continuous)
+                    .strokeBorder(vm.dragDetectorTargeting ? DS.Colors.accent : Color.clear,
+                                  style: StrokeStyle(lineWidth: DS.Size.dropBorder, lineCap: .round, dash: [DS.Space.s]))
+            }
             .overlay {
                 content
                     .padding()

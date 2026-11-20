@@ -38,6 +38,8 @@ final class FavouriteSitesModel: ObservableObject {
     ]
 
     @Published private(set) var sites: [FavouriteSite]
+    /// 右键“重新获取图标”后加一，图标视图据此重新加载
+    @Published private(set) var iconRevision = 0
 
     private init() {
         if let data = UserDefaults.standard.data(forKey: key),
@@ -46,6 +48,23 @@ final class FavouriteSitesModel: ObservableObject {
         } else {
             sites = Self.defaults
         }
+        prefetchIcons()
+    }
+
+    /// 启动时在后台把图标都取好存进缓存，打开刘海时不闪
+    private func prefetchIcons() {
+        let list = sites
+        Task.detached(priority: .utility) {
+            for site in list where site.iconPath == nil {
+                _ = await SiteIconCache.shared.load(site: site)
+            }
+        }
+    }
+
+    /// 清掉缓存，重新联网取网站图标
+    func refetchIcon(for site: FavouriteSite) {
+        SiteIconCache.shared.clear(host: site.host)
+        iconRevision += 1
     }
 
     private func save() {
@@ -56,8 +75,10 @@ final class FavouriteSitesModel: ObservableObject {
 
     func add(title: String, url: String) {
         guard !sites.contains(where: { $0.url == url }) else { return }
-        withAnimation(DS.Motion.micro) { sites.append(.init(title: title, url: url)) }
+        let site = FavouriteSite(title: title, url: url)
+        withAnimation(DS.Motion.micro) { sites.append(site) }
         save()
+        Task.detached(priority: .utility) { _ = await SiteIconCache.shared.load(site: site) }
     }
 
     func remove(_ site: FavouriteSite) {
@@ -263,35 +284,30 @@ struct AoomooaIdleHomeView: View {
     @ObservedObject private var status = SystemStatusModel.shared
     @EnvironmentObject var vm: BoringViewModel
 
-    /// 三栏宽度比例：播放 · 网站 ·（剩下给）状态
-    private let playerShare: CGFloat = 0.42
-    private let sitesShare: CGFloat = 0.28
-    private let siteColumns = 3
+    /// 三个模块的宽度比例：播放 · 网站 ·（剩下给）状态
+    private let playerShare: CGFloat = 0.35
+    private let sitesShare: CGFloat = 0.35
     /// 用量超过这个比例就标成警告色
     static let warnFraction: Double = 0.85
 
     var body: some View {
         GeometryReader { g in
-            HStack(alignment: .top, spacing: 0) {
+            // 模块之间只用间距隔开，不画线
+            let usable = g.size.width - DS.Space.l * 2
+            HStack(alignment: .top, spacing: DS.Space.l) {
                 NowPlayingColumn()
-                    .frame(width: g.size.width * playerShare)
-                divider
-                sitesColumn
-                    .frame(width: g.size.width * sitesShare)
-                divider
+                    .aoomooaModule()
+                    .frame(width: usable * playerShare)
+                sitesGrid
+                    .aoomooaModule()
+                    .frame(width: usable * sitesShare)
                 statusColumn
+                    .aoomooaModule()
                     .frame(maxWidth: .infinity)
             }
         }
         .onAppear { status.start() }
         .onDisappear { status.stop() }
-    }
-
-    private var divider: some View {
-        Rectangle()
-            .fill(DS.Colors.separator)
-            .frame(width: DS.Size.hairline)
-            .padding(.vertical, DS.Space.m)
     }
 
     private func header(_ text: String, _ icon: String) -> some View {
@@ -303,21 +319,25 @@ struct AoomooaIdleHomeView: View {
         .foregroundStyle(DS.Colors.textSecondary)
     }
 
-    // Favourite sites
-    private var sitesColumn: some View {
-        VStack(alignment: .leading, spacing: DS.Space.s) {
-            header("常用网站", "star")
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: DS.Space.s), count: siteColumns),
+    // 常用网站：启动器式图标网格，按模块的宽高自动选 2×3 / 3×2 / 4×2 …
+    private var sitesGrid: some View {
+        GeometryReader { g in
+            let grid = AoomooaIconGrid(count: sites.sites.count, size: g.size)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: DS.Space.s), count: grid.columns),
                       spacing: DS.Space.s) {
                 ForEach(sites.sites) { site in
-                    SiteTile(site: site) {
+                    AoomooaIconTile(title: site.title, iconSize: grid.iconSize, action: {
                         sites.open(site)
                         withAnimation(AoomooaHover.collapseAnimation) { vm.close() }
+                    }) {
+                        SiteIconView(site: site, size: grid.iconSize, revision: sites.iconRevision)
                     }
                     .contextMenu {
                         Button("更换图标…") { sites.chooseIcon(for: site) }
                         if site.iconPath != nil {
                             Button("恢复网站自带图标") { sites.resetIcon(for: site) }
+                        } else {
+                            Button("重新获取图标") { sites.refetchIcon(for: site) }
                         }
                         Divider()
                         Button("添加网站…") { sites.promptAdd() }
@@ -325,9 +345,10 @@ struct AoomooaIdleHomeView: View {
                     }
                 }
             }
+            .frame(maxHeight: .infinity, alignment: .center)
         }
-        .padding(.horizontal, DS.Space.m)
-        .frame(maxHeight: .infinity, alignment: .top)
+        // 模块底边再多留一点，图标离下边至少 DS.Space.l
+        .padding(.bottom, DS.Space.l - DS.Space.m)
     }
 
     // System status
@@ -355,8 +376,6 @@ struct AoomooaIdleHomeView: View {
                     .minimumScaleFactor(0.8)
             }
         }
-        .padding(.horizontal, DS.Space.m)
-        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     /// 成功色 = 正常；警告色 = 偏热；强调色 = 过热（只用规范里的语义色）
@@ -383,69 +402,6 @@ struct AoomooaIdleHomeView: View {
         if bytesPerSec >= 1_048_576 { return String(format: "%.1fM", bytesPerSec / 1_048_576) }
         if bytesPerSec >= 1024 { return String(format: "%.0fK", bytesPerSec / 1024) }
         return String(format: "%.0fB", bytesPerSec)
-    }
-}
-
-private struct SiteTile: View {
-    let site: FavouriteSite
-    let action: () -> Void
-    @State private var hovering = false
-    private static let hoverScale: CGFloat = 1.08
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: DS.Space.xs) {
-                Favicon(host: site.host, size: DS.Size.favicon, customPath: site.iconPath)
-                    .padding(DS.Space.s)
-                    .background(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                        .fill(hovering ? DS.Colors.fillHover : DS.Colors.fill))
-                    .scaleEffect(hovering ? Self.hoverScale : 1)
-                Text(site.title)
-                    .font(DS.Fonts.caption)
-                    .foregroundStyle(hovering ? DS.Colors.textPrimary : DS.Colors.textSecondary)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { h in withAnimation(DS.Motion.micro) { hovering = h } }
-    }
-}
-
-private struct Favicon: View {
-    let host: String
-    let size: CGFloat
-    var customPath: String? = nil
-
-    var body: some View {
-        Group {
-            if let path = customPath, let custom = NSImage(contentsOfFile: path) {
-                Image(nsImage: custom).resizable().interpolation(.high)
-            } else {
-                remote
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
-    }
-
-    /// DuckDuckGo returns nothing when a site has no icon, so we fall back to a letter badge
-    private var remote: some View {
-        AsyncImage(url: URL(string: "https://icons.duckduckgo.com/ip3/\(host).ico")) { phase in
-            if let image = phase.image {
-                image.resizable().interpolation(.high)
-            } else {
-                ZStack {
-                    RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).fill(DS.Colors.fillHover)
-                    Text(String(host.replacingOccurrences(of: "www.", with: "").prefix(1)).uppercased())
-                        .font(DS.Fonts.body(.semibold))
-                        .foregroundStyle(DS.Colors.textPrimary)
-                }
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
     }
 }
 
@@ -494,7 +450,6 @@ private struct NowPlayingColumn: View {
                 player
             }
         }
-        .padding(.horizontal, DS.Space.m)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
