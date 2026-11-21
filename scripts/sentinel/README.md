@@ -60,9 +60,10 @@ curl -s -X POST http://127.0.0.1:17425/status \
 ## 2. DeepSeek Harness (`dsh` 原生 Cordis 插件)
 
 本目录已提供零依赖原生插件 `scripts/sentinel/dsh-notch-plugin/`，直接订阅 `dsh-session` 内置的 `session/event`：
-- `turn/start` / `step/start` / `step/end` / `approval/decided` → ⚪ 工作中（刷新 5 分钟心跳）
-- `approval/asked` → 🔴 需要确认
-- `turn/end` → 🟢 已完成 / 🔴 已出错 / 熄灭
+- `turn/start` / `step/start` / `step/end` / `approval/decided` → 🔘 灰灯（工作中，刷新 5 分钟心跳）
+- `approval/asked` → 🔴 红灯（需要确认）
+- `turn/end` → 🟢 绿灯（已完成）/ 🔴 红灯（已出错）/ 熄灭
+- 超时未更新 → 🟠 橙灯（很久没消息）
 
 将该本地插件挂入你使用的 `dsh` profile（如 `desktop` 或 `web`）：
 

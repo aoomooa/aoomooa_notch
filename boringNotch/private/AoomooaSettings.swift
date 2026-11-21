@@ -218,11 +218,21 @@ struct AoomooaSettingsView: View {
                 }
             }
 
-            HStack(spacing: DS.Space.s) {
-                Button("试灯：工作中") { sentinel.simulate(source: .antigravity, state: .working) }
-                Button("试灯：需确认") { sentinel.simulate(source: .deepseek, state: .attention) }
-                Button("试灯：已完成") { sentinel.simulate(source: .claude, state: .done) }
-                Button("熄灭") { sentinel.clearAll() }
+            VStack(alignment: .leading, spacing: DS.Space.xs) {
+                HStack(spacing: DS.Space.s) {
+                    Button("灰·工作中") { sentinel.simulate(source: .antigravity, state: .working) }
+                    Button("绿·已完成") { sentinel.simulate(source: .claude, state: .done) }
+                    Button("红·需确认") { sentinel.simulate(source: .deepseek, state: .attention) }
+                    Button("橙·长时间") { sentinel.simulate(source: .claude, state: .stale) }
+                }
+                HStack(spacing: DS.Space.s) {
+                    Button("三灯齐亮（左1↔右1 · 左2↔右2 · 左3↔右3）") {
+                        sentinel.simulate(source: .antigravity, state: .working)
+                        sentinel.simulate(source: .claude, state: .done)
+                        sentinel.simulate(source: .deepseek, state: .attention)
+                    }
+                    Button("熄灭") { sentinel.clearAll() }
+                }
             }
             .disabled(!sentinelEnabled)
         } header: {

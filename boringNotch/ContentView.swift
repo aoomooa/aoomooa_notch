@@ -86,7 +86,7 @@ struct ContentView: View {
         } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
             && sentinel.showsOnClosedNotch && (sentinel.isUrgent || !isMusicLiveActive)
         {
-            chinWidth += (2 * DS.Size.sentinelSide)
+            chinWidth += (2 * AoomooaSentinelLiveActivity.sideWidth(for: sentinel.orderedActiveRecords.count))
         } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music)
             && vm.notchState == .closed && isMusicLiveActive && !vm.hideOnClosed
         {

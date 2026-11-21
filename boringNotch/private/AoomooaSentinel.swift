@@ -125,10 +125,10 @@ enum SentinelState: String, Codable, Equatable, Sendable {
     var color: Color {
         switch self {
         case .idle: return .clear
-        case .working: return DS.Colors.indicator
-        case .stale: return DS.Colors.warning
-        case .attention: return DS.Colors.accent
-        case .done: return DS.Colors.success
+        case .working: return DS.Colors.textSecondary   // 灰色：工作中
+        case .stale: return DS.Colors.warning           // 橙色：长时间没消息
+        case .attention: return DS.Colors.accent        // 红色：需要确认 / 出错
+        case .done: return DS.Colors.success            // 绿色：已完成
         }
     }
 }
@@ -177,6 +177,15 @@ final class AoomooaSentinelModel: ObservableObject {
 
     // MARK: 派生状态
 
+    /// 按固定来源顺序排列的活跃记录（左1↔右1、左2↔右2、左3↔右3 位置稳定不乱跳）
+    var orderedActiveRecords: [SentinelRecord] {
+        SentinelSource.allCases.compactMap { source in
+            guard let record = records[source], record.state != .idle else { return nil }
+            return record
+        }
+    }
+
+    /// 按紧急度排列的活跃记录（用于浮卡列表与主优先级判定）
     var activeRecords: [SentinelRecord] {
         records.values
             .filter { $0.state != .idle }
@@ -692,37 +701,53 @@ private final class SentinelLoopbackServer: @unchecked Sendable {
     }
 }
 
-// MARK: - 收起态刘海视图：左侧 AI 原生 Logo，右侧极简状态小灯
+// MARK: - 收起态刘海视图：纯左右水平分布（左1↔右1 · 左2↔右2 · 左3↔右3）
 
 struct AoomooaSentinelLiveActivity: View {
     @ObservedObject private var sentinel = AoomooaSentinelModel.shared
     let height: CGFloat
     let middleWidth: CGFloat
 
+    /// 根据同时活跃的 AI 数量自适应左右耳宽度（保持硬件刘海严格居中对称）
+    static func sideWidth(for count: Int) -> CGFloat {
+        switch count {
+        case ...1: return DS.Size.sentinelSide   // 34 pt
+        case 2: return 48
+        default: return 66
+        }
+    }
+
     var body: some View {
-        let records = sentinel.activeRecords
-        let primary = records.first
-        let iconSize = max(16, min(22, height - 12))
+        let records = Array(sentinel.orderedActiveRecords.prefix(3))
+        let earWidth = Self.sideWidth(for: records.count)
+        let iconSize: CGFloat = {
+            switch records.count {
+            case ...1: return max(16, min(20, height - 12))
+            case 2: return max(15, min(17, height - 14))
+            default: return max(14, min(16, height - 15))
+            }
+        }()
 
         HStack(spacing: 0) {
-            // 左侧：主活跃 AI 的真实 App Logo
-            Group {
-                if let primary {
-                    SentinelLogoView(source: primary.source, size: iconSize)
+            // 左侧：按顺序横排 1–3 个 AI 原生 Logo（左1 · 左2 · 左3）
+            HStack(spacing: DS.Space.xs) {
+                ForEach(records) { record in
+                    SentinelLogoView(source: record.source, size: iconSize)
                 }
             }
-            .frame(width: DS.Size.sentinelSide, height: height)
+            .frame(width: earWidth, height: height)
 
             // 中间：硬件刘海黑色桥接
             Rectangle()
                 .fill(DS.Colors.background)
                 .frame(width: max(0, middleWidth), height: height)
 
-            // 右侧：状态小灯（单源 1 颗主灯，多源最多并排 3 颗极简小灯）
+            // 右侧：按相同顺序横排 1–3 颗状态小灯（右1 · 右2 · 右3，与左侧一一对应）
             SentinelLightsCluster(records: records)
-                .frame(width: DS.Size.sentinelSide, height: height)
+                .frame(width: earWidth, height: height)
         }
         .frame(height: height)
+        .animation(DS.Motion.panel, value: records.count)
     }
 }
 
@@ -760,24 +785,23 @@ struct SentinelLogoView: View {
     }
 }
 
-/// 右耳小灯组：单源显示一颗 8pt 主灯，多源紧凑并排最多 3 颗 6pt 小灯
+/// 右耳小灯组：纯水平横排，与左耳 Logo 一一对应（右1 ↔ 左1，右2 ↔ 左2，右3 ↔ 左3）
 private struct SentinelLightsCluster: View {
     let records: [SentinelRecord]
 
     var body: some View {
         let shown = Array(records.prefix(3))
-        HStack(spacing: DS.Space.xs) {
+        let dotSize: CGFloat = shown.count <= 2 ? DS.Size.sentinelLight : 7
+        let gap: CGFloat = shown.count == 1 ? 0 : DS.Space.s
+        HStack(spacing: gap) {
             ForEach(shown) { record in
-                SentinelLightDot(
-                    state: record.state,
-                    diameter: shown.count == 1 ? DS.Size.sentinelLight : DS.Size.sentinelDotSmall
-                )
+                SentinelLightDot(state: record.state, diameter: dotSize)
             }
         }
     }
 }
 
-/// 单颗状态小灯：working 轻呼吸 · attention 轻脉冲 · done/stale 柔和常亮
+/// 单颗状态小灯：灰色 working 轻呼吸 · 红色 attention 轻脉冲 · 绿色 done / 橙色 stale 柔和常亮
 struct SentinelLightDot: View {
     let state: SentinelState
     let diameter: CGFloat
@@ -785,11 +809,12 @@ struct SentinelLightDot: View {
 
     var body: some View {
         let animated = state == .working || state == .attention
+        let minOpacity: Double = state == .working ? 0.45 : 0.35
         Circle()
             .fill(state.color)
             .frame(width: diameter, height: diameter)
-            .shadow(color: state.color.opacity(state == .working ? 0.35 : 0.75), radius: diameter * 0.5)
-            .opacity(animated ? (pulse ? 0.35 : 1.0) : 1.0)
+            .shadow(color: state.color.opacity(state == .working ? 0.25 : 0.75), radius: diameter * 0.5)
+            .opacity(animated ? (pulse ? minOpacity : 1.0) : 1.0)
             .scaleEffect(state == .attention && pulse ? 0.85 : 1.0)
             .onAppear { restartPulse() }
             .onChange(of: state) { _, _ in restartPulse() }
