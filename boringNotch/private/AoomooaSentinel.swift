@@ -150,8 +150,6 @@ struct SentinelRecord: Equatable, Identifiable {
 final class AoomooaSentinelModel: ObservableObject {
     static let shared = AoomooaSentinelModel()
 
-    /// done 状态无人处理时的宽松自动淡出时长（秒）
-    private static let doneAutoFadeSeconds: TimeInterval = 15 * 60
     /// 限制单个请求包体，防止恶意大包
     private static let maxRequestBytes = 2048
 
@@ -165,7 +163,6 @@ final class AoomooaSentinelModel: ObservableObject {
 
     private var server: SentinelLoopbackServer?
     private var watchdogTask: Task<Void, Never>?
-    private var doneFadeTask: Task<Void, Never>?
     private var workspaceObserver: NSObjectProtocol?
     private var terminateObserver: NSObjectProtocol?
     private var lastActiveBundleID: String?
@@ -221,8 +218,6 @@ final class AoomooaSentinelModel: ObservableObject {
         listenError = nil
         watchdogTask?.cancel()
         watchdogTask = nil
-        doneFadeTask?.cancel()
-        doneFadeTask = nil
         if let obs = workspaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(obs)
             workspaceObserver = nil
@@ -362,7 +357,11 @@ final class AoomooaSentinelModel: ObservableObject {
             ) { [weak self] note in
                 let bundleID = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
                 Task { @MainActor in
-                    if let bundleID, let source = SentinelSource.from(bundleID: bundleID) {
+                    // Claude 任务跑在云端，退出桌面 App 不代表云端任务停止，因此退出时不自动清 Claude 的灯；
+                    // 仅对本机运行的桌面宿主（Antigravity / DeepSeek Harness.app）在退出时清灯。
+                    if let bundleID,
+                       let source = SentinelSource.from(bundleID: bundleID),
+                       source != .claude {
                         self?.dismiss(source)
                     }
                 }
@@ -384,17 +383,15 @@ final class AoomooaSentinelModel: ObservableObject {
         dismiss(source)
     }
 
-    // MARK: 按需定时：看门狗（分源独立超时）+ done 自动淡出
+    // MARK: 按需定时：看门狗（分源独立超时；绿灯 done 绝不自动淡出，确保离开电脑回来仍看得到）
 
     func rescheduleTimers() {
         watchdogTask?.cancel()
         watchdogTask = nil
-        doneFadeTask?.cancel()
-        doneFadeTask = nil
 
         let now = Date()
 
-        // 1. 仅为 working 中的源安排单次最早超时任务（无 working 源时零任务、0% CPU）
+        // 仅为 working 中的源安排单次最早超时任务（无 working 源时零任务、0% CPU）
         let workingDeadlines: [(SentinelSource, Date)] = records.values
             .filter { $0.state == .working }
             .map { ($0.source, $0.lastHeartbeatAt.addingTimeInterval($0.source.timeoutSeconds)) }
@@ -405,20 +402,6 @@ final class AoomooaSentinelModel: ObservableObject {
                 try? await Task.sleep(for: .seconds(wait))
                 guard !Task.isCancelled else { return }
                 self?.evaluateStaleWorking()
-            }
-        }
-
-        // 2. 仅为 done 状态安排宽松淡出，防止离开电脑后绿灯常亮整晚
-        let doneDeadlines: [(SentinelSource, Date)] = records.values
-            .filter { $0.state == .done }
-            .map { ($0.source, $0.updatedAt.addingTimeInterval(Self.doneAutoFadeSeconds)) }
-
-        if let nextDone = doneDeadlines.min(by: { $0.1 < $1.1 }) {
-            let wait = max(1, nextDone.1.timeIntervalSince(now))
-            doneFadeTask = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(wait))
-                guard !Task.isCancelled else { return }
-                self?.expireOldDone()
             }
         }
     }
@@ -437,22 +420,6 @@ final class AoomooaSentinelModel: ObservableObject {
         }
         if changed {
             withAnimation(DS.Motion.micro) { objectWillChange.send() }
-        }
-        rescheduleTimers()
-    }
-
-    private func expireOldDone() {
-        let now = Date()
-        var toRemove: [SentinelSource] = []
-        for (source, record) in records where record.state == .done {
-            if now.timeIntervalSince(record.updatedAt) >= Self.doneAutoFadeSeconds - 1 {
-                toRemove.append(source)
-            }
-        }
-        if !toRemove.isEmpty {
-            withAnimation(DS.Motion.micro) {
-                for s in toRemove { records.removeValue(forKey: s) }
-            }
         }
         rescheduleTimers()
     }

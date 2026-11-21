@@ -56,16 +56,21 @@ elif event in ("PermissionRequest", "Notification"):
     state = "attention"
     label = "需要确认"
 elif event == "Stop":
-    reason = str(data.get("terminationReason") or "").upper()
+    reason = str(data.get("terminationReason") or "").strip().upper()
     err = str(data.get("error") or "").strip()
     if reason == "USER_CANCELED":
         state = "idle"
-    elif err or reason.startswith("ERROR") or reason.startswith("MAX_"):
-        state = "attention"
-        label = "已出错" if err or reason == "ERROR" else "达到上限"
-    else:
+    elif not err and reason in ("", "NO_TOOL_CALL", "INJECTED_RESPONSE"):
         state = "done"
         label = "已完成"
+    else:
+        state = "attention"
+        if err or reason == "ERROR":
+            label = "已出错"
+        elif reason.startswith("MAX_"):
+            label = "达到上限"
+        else:
+            label = "异常终止"
 
 if not state:
     sys.exit(0)

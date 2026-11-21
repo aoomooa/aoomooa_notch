@@ -88,13 +88,18 @@ export function apply(ctx, config = {}) {
         void report("attention", "需要确认");
         break;
       case "turn/end": {
-        const reason = String(event?.data?.reason || "").toLowerCase();
+        const reason = String(event?.data?.reason || "").trim().toLowerCase();
         if (reason === "completed") {
           void report("done", "已完成");
-        } else if (reason === "error") {
-          void report("attention", "已出错");
-        } else {
+        } else if (
+          reason === "aborted" ||
+          reason === "cancelled" ||
+          reason === "canceled" ||
+          reason === "interrupted"
+        ) {
           void report("idle");
+        } else {
+          void report("attention", "已出错");
         }
         break;
       }
