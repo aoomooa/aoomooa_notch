@@ -10,7 +10,38 @@ import LaunchAtLogin
 import Security
 import SwiftUI
 
-// MARK: - 1. 常规（系统 · 手势 · 外观与联动）
+// MARK: - 侧栏底部品牌标识
+
+struct AoomooaSettingsSidebarBrand: View {
+    private var version: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
+
+    var body: some View {
+        HStack(spacing: DS.Space.s) {
+            Image("AoomooaLogo")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: DS.Size.brandLogoSmall, height: DS.Size.brandLogoSmall)
+                .clipShape(AoomooaSquircle())
+                .shadow(color: DS.Shadow.iconColor, radius: DS.Shadow.iconRadius, y: DS.Shadow.iconY)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("aoomooa🉐刘海屏")
+                    .font(DS.Fonts.caption(.medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                Text("v\(version)")
+                    .font(DS.Fonts.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, DS.Space.m)
+        .padding(.vertical, DS.Space.m)
+    }
+}
+
+// MARK: - 1. 常规（系统 · 手势 · 外观与媒体）
 
 struct AoomooaGeneralSettingsView: View {
     @AppStorage(AoomooaPrefs.Key.hoverDelay) private var hoverDelay = AoomooaPrefs.Default.hoverDelay
@@ -22,13 +53,11 @@ struct AoomooaGeneralSettingsView: View {
     @ObservedObject private var coordinator = BoringViewCoordinator.shared
     @Default(.showOnAllDisplays) private var showOnAllDisplays
     @Default(.mediaController) private var mediaController
-    @Default(.hudReplacement) private var hudReplacement
 
     @State private var screens: [(uuid: String, name: String)] = NSScreen.screens.compactMap { screen in
         guard let uuid = screen.displayUUID else { return nil }
         return (uuid, screen.localizedName)
     }
-    @State private var accessibilityAuthorized = false
 
     private var availableMediaControllers: [MediaControllerType] {
         MusicManager.shared.isNowPlayingDeprecated
@@ -40,24 +69,10 @@ struct AoomooaGeneralSettingsView: View {
         Form {
             systemSection
             gestureSection
-            appearanceAndSystemSection
+            appearanceSection
         }
         .formStyle(.grouped)
         .navigationTitle("常规")
-        .task {
-            accessibilityAuthorized = await XPCHelperClient.shared.isAccessibilityAuthorized()
-        }
-        .onAppear {
-            XPCHelperClient.shared.startMonitoringAccessibilityAuthorization()
-        }
-        .onDisappear {
-            XPCHelperClient.shared.stopMonitoringAccessibilityAuthorization()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .accessibilityAuthorizationChanged)) { note in
-            if let granted = note.userInfo?["granted"] as? Bool {
-                accessibilityAuthorized = granted
-            }
-        }
     }
 
     private var systemSection: some View {
@@ -120,8 +135,8 @@ struct AoomooaGeneralSettingsView: View {
         }
     }
 
-    private var appearanceAndSystemSection: some View {
-        Section("外观与系统联动") {
+    private var appearanceSection: some View {
+        Section("外观与媒体") {
             Slider(value: $tintStrength, in: AoomooaPrefs.Limits.tintStrength, step: 0.05) {
                 aoomooaValueRow("封面取色强度", "\(Int((tintStrength * 100).rounded()))%")
             }
@@ -139,25 +154,6 @@ struct AoomooaGeneralSettingsView: View {
             }
             .onChange(of: mediaController) { _, _ in
                 NotificationCenter.default.post(name: .mediaControllerChanged, object: nil)
-            }
-            Defaults.Toggle(key: .hudReplacement) {
-                Text("替换系统音量 / 亮度浮窗")
-            }
-            .disabled(!accessibilityAuthorized)
-            if !accessibilityAuthorized {
-                HStack {
-                    Text("替换系统浮窗需要“辅助功能”权限")
-                        .font(DS.Fonts.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("前往授权") {
-                        XPCHelperClient.shared.requestAccessibilityAuthorization()
-                    }
-                    .controlSize(.small)
-                }
-            }
-            Defaults.Toggle(key: .showPowerStatusNotifications) {
-                Text("充电状态提醒")
             }
         }
     }
@@ -179,6 +175,7 @@ struct AoomooaModulesSettingsView: View {
     @ObservedObject private var weather = WeatherModel.shared
     @ObservedObject private var sentinel = AoomooaSentinelModel.shared
     @State private var copiedTokenPath = false
+    @State private var showSentinelTools = false
 
     var body: some View {
         Form {
@@ -206,86 +203,174 @@ struct AoomooaModulesSettingsView: View {
 
     private var sentinelSection: some View {
         Section {
-            Toggle("启用 AI 状态小灯", isOn: $sentinelEnabled)
-                .onChange(of: sentinelEnabled) { _, on in
-                    sentinel.setEnabled(on)
-                }
-
-            LabeledContent("监听状态") {
-                if !sentinelEnabled {
-                    Text("已关闭").foregroundStyle(.secondary)
-                } else if sentinel.isListening {
-                    Text("127.0.0.1:\(AoomooaPrefs.sentinelPort) · 运行中")
-                        .monospacedDigit()
-                        .foregroundStyle(DS.Colors.success)
-                } else if let err = sentinel.listenError {
-                    Text("失败：\(err)")
-                        .foregroundStyle(DS.Colors.warning)
-                        .lineLimit(1)
-                } else {
-                    Text("启动中…").foregroundStyle(.secondary)
-                }
-            }
-
-            Stepper(value: $timeoutAntigravity, in: AoomooaPrefs.Limits.sentinelTimeout) {
-                aoomooaValueRow("Antigravity「很久没消息」超时", "\(timeoutAntigravity) 分钟")
-            }
-            .onChange(of: timeoutAntigravity) { _, _ in sentinel.rescheduleTimers() }
-
-            Stepper(value: $timeoutDeepSeek, in: AoomooaPrefs.Limits.sentinelTimeout) {
-                aoomooaValueRow("DeepSeek「很久没消息」超时", "\(timeoutDeepSeek) 分钟")
-            }
-            .onChange(of: timeoutDeepSeek) { _, _ in sentinel.rescheduleTimers() }
-
-            Stepper(value: $timeoutClaude, in: AoomooaPrefs.Limits.sentinelTimeout) {
-                aoomooaValueRow("Claude「很久没消息」超时", "\(timeoutClaude) 分钟")
-            }
-            .onChange(of: timeoutClaude) { _, _ in sentinel.rescheduleTimers() }
-
-            LabeledContent("口令文件（0600）") {
+            Toggle(isOn: $sentinelEnabled) {
                 HStack(spacing: DS.Space.s) {
-                    Text(sentinel.tokenFilePath)
-                        .font(DS.Fonts.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                    Button(copiedTokenPath ? "已复制" : "复制路径") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(sentinel.tokenFilePath, forType: .string)
-                        copiedTokenPath = true
-                        Task {
-                            try? await Task.sleep(for: .seconds(1.5))
-                            copiedTokenPath = false
+                    Text("启用 AI 状态小灯")
+                    sentinelStatusBadge
+                }
+            }
+            .onChange(of: sentinelEnabled) { _, on in
+                sentinel.setEnabled(on)
+            }
+
+            if sentinelEnabled {
+                // 按刘海左→右固定顺序排列（左1 Antigravity · 左2 Claude · 左3 DeepSeek）
+                sentinelToolRow(source: .antigravity, timeout: $timeoutAntigravity)
+                    .onChange(of: timeoutAntigravity) { _, _ in sentinel.rescheduleTimers() }
+                sentinelToolRow(source: .claude, timeout: $timeoutClaude)
+                    .onChange(of: timeoutClaude) { _, _ in sentinel.rescheduleTimers() }
+                sentinelToolRow(source: .deepseek, timeout: $timeoutDeepSeek)
+                    .onChange(of: timeoutDeepSeek) { _, _ in sentinel.rescheduleTimers() }
+
+                DisclosureGroup("试灯与连接信息", isExpanded: $showSentinelTools) {
+                    VStack(alignment: .leading, spacing: DS.Space.s) {
+                        HStack(spacing: DS.Space.s) {
+                            sentinelTestButton("工作中", dot: sentinelDotColor(.working)) {
+                                sentinel.simulate(source: .antigravity, state: .working)
+                            }
+                            sentinelTestButton("已完成", dot: sentinelDotColor(.done)) {
+                                sentinel.simulate(source: .claude, state: .done)
+                            }
+                            sentinelTestButton("需确认", dot: sentinelDotColor(.attention)) {
+                                sentinel.simulate(source: .deepseek, state: .attention)
+                            }
+                            sentinelTestButton("长时间", dot: sentinelDotColor(.stale)) {
+                                sentinel.simulate(source: .claude, state: .stale)
+                            }
+                        }
+                        HStack(spacing: DS.Space.s) {
+                            sentinelTestButton("三灯齐亮") {
+                                sentinel.simulate(source: .antigravity, state: .working)
+                                sentinel.simulate(source: .claude, state: .done)
+                                sentinel.simulate(source: .deepseek, state: .attention)
+                            }
+                            sentinelTestButton("全部熄灭") {
+                                sentinel.clearAll()
+                            }
+                        }
+                    }
+
+                    LabeledContent("监听地址") {
+                        Text(verbatim: "127.0.0.1:\(String(AoomooaPrefs.sentinelPort))")
+                            .font(DS.Fonts.caption)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+
+                    LabeledContent("口令文件（0600）") {
+                        HStack(spacing: DS.Space.s) {
+                            Text(sentinel.tokenFilePath)
+                                .font(DS.Fonts.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .textSelection(.enabled)
+                            Button(copiedTokenPath ? "已复制" : "复制路径") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(sentinel.tokenFilePath, forType: .string)
+                                copiedTokenPath = true
+                                Task {
+                                    try? await Task.sleep(for: .seconds(1.5))
+                                    copiedTokenPath = false
+                                }
+                            }
+                            .controlSize(.small)
+                            .tint(.secondary)
                         }
                     }
                 }
             }
-
-            VStack(alignment: .leading, spacing: DS.Space.xs) {
-                HStack(spacing: DS.Space.s) {
-                    Button("灰·工作中") { sentinel.simulate(source: .antigravity, state: .working) }
-                    Button("绿·已完成") { sentinel.simulate(source: .claude, state: .done) }
-                    Button("红·需确认") { sentinel.simulate(source: .deepseek, state: .attention) }
-                    Button("橙·长时间") { sentinel.simulate(source: .claude, state: .stale) }
-                }
-                HStack(spacing: DS.Space.s) {
-                    Button("三灯齐亮") {
-                        sentinel.simulate(source: .antigravity, state: .working)
-                        sentinel.simulate(source: .claude, state: .done)
-                        sentinel.simulate(source: .deepseek, state: .attention)
-                    }
-                    Button("熄灭") { sentinel.clearAll() }
-                }
-            }
-            .disabled(!sentinelEnabled)
         } header: {
             Text("AI 哨兵")
         } footer: {
-            Text("仅监听本机回环 127.0.0.1，强制校验 X-Notch-Token 并拒绝浏览器 Origin；空闲 0% CPU，不写日志、不落盘内容。")
+            Text("左耳 Logo 与右耳小灯按上表顺序一一对应；超时未收到更新时亮橙灯，仅监听本机回环，空闲 0% CPU。")
                 .font(DS.Fonts.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    @ViewBuilder
+    private var sentinelStatusBadge: some View {
+        if !sentinelEnabled {
+            EmptyView()
+        } else if sentinel.isListening {
+            HStack(spacing: DS.Space.xs) {
+                Circle()
+                    .fill(DS.Colors.success)
+                    .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
+                Text("运行中")
+                    .font(DS.Fonts.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } else if let err = sentinel.listenError {
+            HStack(spacing: DS.Space.xs) {
+                Circle()
+                    .fill(DS.Colors.warning)
+                    .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
+                Text(err)
+                    .font(DS.Fonts.caption)
+                    .foregroundStyle(DS.Colors.warning)
+                    .lineLimit(1)
+            }
+        } else {
+            Text("启动中…")
+                .font(DS.Fonts.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func sentinelToolRow(source: SentinelSource, timeout: Binding<Int>) -> some View {
+        Stepper(value: timeout, in: AoomooaPrefs.Limits.sentinelTimeout) {
+            HStack(spacing: DS.Space.s) {
+                SentinelLogoView(source: source, size: DS.Size.appIconMin)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(source.displayName)
+                    if let record = sentinel.records[source], record.state != .idle {
+                        HStack(spacing: DS.Space.xs) {
+                            Circle()
+                                .fill(sentinelDotColor(record.state))
+                                .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
+                            Text(record.label)
+                                .font(DS.Fonts.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text("空闲")
+                            .font(DS.Fonts.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                Spacer(minLength: DS.Space.s)
+                Text("超时 \(timeout.wrappedValue) 分钟")
+                    .font(DS.Fonts.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func sentinelTestButton(_ title: String, dot: Color? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: DS.Space.xs) {
+                if let dot {
+                    Circle()
+                        .fill(dot)
+                        .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
+                }
+                Text(title)
+                    .font(DS.Fonts.caption(.medium))
+                    .foregroundStyle(.primary)
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .tint(.secondary)
+    }
+
+    /// 设置页适配亮/暗两种模式（灰色工作灯不用纯白半透明，避免浅色模式下看不清）
+    private func sentinelDotColor(_ state: SentinelState) -> Color {
+        state == .working ? Color(nsColor: .secondaryLabelColor) : state.color
     }
 
     private var timerSection: some View {
@@ -324,16 +409,19 @@ struct AoomooaModulesSettingsView: View {
     }
 }
 
-// MARK: - 3. 诊断与关于（权限 · 后台进程 · 恢复默认 · 退出）
+// MARK: - 3. 诊断与关于（品牌 · 后台进程 · 恢复默认 · 退出）
 
 struct AoomooaAboutSettingsView: View {
     @ObservedObject private var coordinator = BoringViewCoordinator.shared
     @ObservedObject private var sentinel = AoomooaSentinelModel.shared
 
-    @State private var accessibilityGranted: Bool?
     @State private var cleanupMessage: String?
     @State private var cleaning = false
     @State private var confirmReset = false
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
 
     var body: some View {
         Form {
@@ -343,24 +431,37 @@ struct AoomooaAboutSettingsView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("诊断与关于")
-        .task { accessibilityGranted = await XPCHelperClient.shared.isAccessibilityAuthorized() }
     }
 
     private var aboutSection: some View {
-        Section("关于") {
-            LabeledContent("应用名称", value: "aoomooa🉐刘海屏")
-            LabeledContent("版本", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
-            LabeledContent("开源协议", value: "GNU GPLv3（基于 Boring Notch）")
+        Section {
+            HStack(spacing: DS.Space.m) {
+                Image("AoomooaLogo")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: DS.Size.brandLogo, height: DS.Size.brandLogo)
+                    .clipShape(AoomooaSquircle())
+                    .shadow(color: DS.Shadow.iconColor, radius: DS.Shadow.iconRadius, y: DS.Shadow.iconY)
+                VStack(alignment: .leading, spacing: DS.Space.xs) {
+                    Text("aoomooa🉐刘海屏")
+                        .font(DS.Fonts.title)
+                    Text("版本 \(appVersion) · GNU GPLv3（基于 Boring Notch）")
+                        .font(DS.Fonts.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, DS.Space.xs)
         }
     }
 
     private var diagnosticsSection: some View {
-        Section {
+        Section("诊断") {
             LabeledContent("安装路径") {
                 VStack(alignment: .trailing, spacing: 0) {
                     Text(Bundle.main.bundlePath).textSelection(.enabled)
                     if !AoomooaDiagnostics.isInstalledAtFixedPath {
-                        Text("不是 \(AoomooaDiagnostics.fixedInstallPath)，辅助功能权限可能反复失效")
+                        Text("建议安装在 \(AoomooaDiagnostics.fixedInstallPath)")
                             .font(DS.Fonts.caption)
                             .foregroundStyle(DS.Colors.warning)
                     }
@@ -372,21 +473,6 @@ struct AoomooaAboutSettingsView: View {
                     .multilineTextAlignment(.trailing)
                     .textSelection(.enabled)
             }
-            LabeledContent("辅助功能权限") {
-                switch accessibilityGranted {
-                case .some(true): Text("已授权").foregroundStyle(DS.Colors.success)
-                case .some(false): Text("未授权").foregroundStyle(DS.Colors.warning)
-                case .none: Text("检查中…").foregroundStyle(.secondary)
-                }
-            }
-            HStack {
-                Button("打开“辅助功能”设置") { AoomooaDiagnostics.openAccessibilitySettings() }
-                Button("重新检查") {
-                    accessibilityGranted = nil
-                    Task { accessibilityGranted = await XPCHelperClient.shared.isAccessibilityAuthorized() }
-                }
-            }
-
             LabeledContent("后台子进程", value: "\(AoomooaProcessGuard.shared.trackedCount) 个（音乐读取进程）")
             HStack {
                 Button(cleaning ? "清理中…" : "清理残留后台进程") {
@@ -409,12 +495,6 @@ struct AoomooaAboutSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-        } header: {
-            Text("诊断")
-        } footer: {
-            Text(AoomooaDiagnostics.accessibilityExplanation)
-                .font(DS.Fonts.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -439,6 +519,8 @@ struct AoomooaAboutSettingsView: View {
     private func resetPrefs() {
         AoomooaPrefs.resetAll()
         coordinator.openLastTabByDefault = true
+        Defaults[.hudReplacement] = false
+        Defaults[.showPowerStatusNotifications] = false
         sentinel.setEnabled(AoomooaPrefs.Default.sentinelEnabled)
         sentinel.rescheduleTimers()
     }
@@ -554,12 +636,6 @@ enum AoomooaDiagnostics {
         Bundle.main.bundlePath == fixedInstallPath
     }
 
-    static let accessibilityExplanation = """
-    替换系统音量 / 亮度浮窗需要“辅助功能”权限。macOS 把这个权限记在「应用标识 + 签名」上：\
-    用 scripts/build-install.sh 安装到 /Applications/aoomooa🉐刘海屏.app、并用固定的 Apple 开发证书签名，重新编译后就不用再授权。\
-    如果是临时签名（ad-hoc），每次编译签名都会变，需要在 系统设置 → 隐私与安全性 → 辅助功能 里删掉旧的 aoomooa 再重新勾选。
-    """
-
     /// 当前运行的这份 App 是用什么签名的
     static var signingSummary: String {
         var code: SecCode?
@@ -579,11 +655,5 @@ enum AoomooaDiagnostics {
             return team.map { "\(name)（团队 \($0)）" } ?? name
         }
         return "临时签名（ad-hoc）：每次编译都会变"
-    }
-
-    static func openAccessibilitySettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
-        }
     }
 }

@@ -40,8 +40,11 @@ struct SettingsView: View {
             }
             .listStyle(SidebarListStyle())
             .tint(.effectiveAccent)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                AoomooaSettingsSidebarBrand()
+            }
             .toolbar(removing: .sidebarToggle)
-            .navigationSplitViewColumnWidth(160)
+            .navigationSplitViewColumnWidth(172)
         } detail: {
             Group {
                 switch selectedTab {

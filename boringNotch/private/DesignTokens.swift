@@ -186,6 +186,9 @@ enum DS {
         static let sentinelSide: CGFloat = 34
         static let sentinelLight: CGFloat = 8
         static let sentinelDotSmall: CGFloat = 6
+        /// 品牌徽标（设置关于页 / 侧栏底角）
+        static let brandLogo: CGFloat = 52
+        static let brandLogoSmall: CGFloat = 24
         /// 分钟滚轮：每行高度、所在卡片的宽度
         static let wheelRow: CGFloat = 22
         static let wheelTile: CGFloat = 100
