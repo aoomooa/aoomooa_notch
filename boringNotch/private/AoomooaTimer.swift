@@ -151,66 +151,54 @@ final class NotchTimerModel: ObservableObject {
     }
 }
 
-// MARK: - 展开后的页面：左边天气 · 右边计时器
+// MARK: - 展开后的页面（页面 3：时间 — 左边日历与天气 · 右边紧凑计时器）
 
 struct NotchTimerView: View {
     @ObservedObject private var timer = NotchTimerModel.shared
-    @ObservedObject private var weather = WeatherModel.shared
 
-    /// 左边天气占的宽度比例
-    private static let weatherShare: CGFloat = 0.34
+    /// 左边日历+天气占的宽度比例
+    private static let calendarShare: CGFloat = 0.50
     /// 时间的刷新间隔（秒）
     private static let tick: TimeInterval = 1
 
     var body: some View {
         GeometryReader { g in
-            // 两个模块：极淡的底 + 面板圆角，中间只留间距，不画线
+            // 两个模块：极淡的底 + 面板圆角，中间只留间距，不画线（去掉多余的模块说明文字）
             HStack(alignment: .top, spacing: DS.Space.l) {
-                module("天气", "cloud.sun") {
-                    AoomooaWeatherCard()
-                }
-                .frame(width: (g.size.width - DS.Space.l) * Self.weatherShare)
+                NotchRemindersView()
+                    .aoomooaModule()
+                    .frame(width: (g.size.width - DS.Space.l) * Self.calendarShare)
 
-                module("计时器", "timer") {
-                    Group {
-                        switch timer.phase {
-                        case .idle: picker
-                        case .running, .paused: running
-                        case .finished: finished
-                        }
+                Group {
+                    switch timer.phase {
+                    case .idle: picker
+                    case .running, .paused: running
+                    case .finished: finished
                     }
-                    .transition(.opacity)
                 }
+                .transition(.opacity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .aoomooaModule()
                 .frame(maxWidth: .infinity)
             }
         }
         .animation(DS.Motion.micro, value: timer.phase)
-        .onAppear { weather.refreshIfStale() }
     }
 
-    /// 一个模块：小标题 + 撑满剩余高度的内容（左右两个模块标题同高，内容上下对齐）
-    private func module<Content: View>(_ title: String, _ icon: String,
-                                       @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: DS.Space.s) {
-            HStack(spacing: DS.Space.xs) {
-                Image(systemName: icon)
-                Text(title)
-            }
-            .font(DS.Fonts.caption(.semibold))
-            .foregroundStyle(DS.Colors.textSecondary)
-
-            content()
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        }
-        .aoomooaModule()
-    }
-
-    // 选时长：四个快捷时长 + 自定义滚轮
+    // 选时长：左边 2×2 预设方格 + 右边自定义分钟滚轮（在 50% 宽度里舒展好点）
     private var picker: some View {
         HStack(spacing: DS.Space.s) {
-            ForEach(NotchTimerModel.presetMinutes, id: \.self) { minutes in
-                TimerPresetTile(minutes: minutes) { timer.start(minutes: minutes) }
+            VStack(spacing: DS.Space.s) {
+                HStack(spacing: DS.Space.s) {
+                    TimerPresetTile(minutes: NotchTimerModel.presetMinutes[0]) { timer.start(minutes: NotchTimerModel.presetMinutes[0]) }
+                    TimerPresetTile(minutes: NotchTimerModel.presetMinutes[1]) { timer.start(minutes: NotchTimerModel.presetMinutes[1]) }
+                }
+                HStack(spacing: DS.Space.s) {
+                    TimerPresetTile(minutes: NotchTimerModel.presetMinutes[2]) { timer.start(minutes: NotchTimerModel.presetMinutes[2]) }
+                    TimerPresetTile(minutes: NotchTimerModel.presetMinutes[3]) { timer.start(minutes: NotchTimerModel.presetMinutes[3]) }
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             customTile
         }
         .onAppear { timer.customMinutes = AoomooaPrefs.timerMinutes }
@@ -232,7 +220,7 @@ struct NotchTimerView: View {
         .background(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous).fill(DS.Colors.fill))
     }
 
-    // 计时中 / 暂停
+    // 计时中 / 暂停（左圆环，右上下两排按钮，50% 宽度不挤）
     private var running: some View {
         TimelineView(.periodic(from: .now, by: Self.tick)) { context in
             HStack(spacing: DS.Space.m) {
@@ -259,11 +247,12 @@ struct NotchTimerView: View {
                     Text(timer.phase == .paused ? "已暂停" : "计时中 · \(Int(timer.duration / 60)) 分钟")
                         .font(DS.Fonts.caption)
                         .foregroundStyle(DS.Colors.textSecondary)
+                        .lineLimit(1)
+                    AoomooaPillButton(title: timer.phase == .paused ? "继续" : "暂停",
+                                      icon: timer.phase == .paused ? "play.fill" : "pause.fill",
+                                      prominent: true) { timer.togglePause() }
                     HStack(spacing: DS.Space.s) {
-                        AoomooaPillButton(title: timer.phase == .paused ? "继续" : "暂停",
-                                          icon: timer.phase == .paused ? "play.fill" : "pause.fill",
-                                          prominent: true) { timer.togglePause() }
-                        AoomooaPillButton(title: "+1 分钟", icon: "plus") { timer.addMinute() }
+                        AoomooaPillButton(title: "+1 分", icon: "plus") { timer.addMinute() }
                         AoomooaPillButton(title: "结束", icon: "xmark") { timer.cancel() }
                     }
                 }
@@ -274,7 +263,7 @@ struct NotchTimerView: View {
 
     // 时间到
     private var finished: some View {
-        HStack(spacing: DS.Space.m) {
+        HStack(spacing: DS.Space.s) {
             Image(systemName: "bell.fill")
                 .font(DS.Fonts.title)
                 .foregroundStyle(DS.Colors.accent)
@@ -282,11 +271,14 @@ struct NotchTimerView: View {
                 Text("时间到")
                     .font(DS.Fonts.title)
                     .foregroundStyle(DS.Colors.accent)
+                    .lineLimit(1)
                 Text("\(timer.lastMinutes) 分钟计时结束了")
                     .font(DS.Fonts.caption)
                     .foregroundStyle(DS.Colors.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
-            Spacer(minLength: DS.Space.s)
+            Spacer(minLength: DS.Space.xs)
             VStack(alignment: .trailing, spacing: DS.Space.s) {
                 AoomooaPillButton(title: "再来一次", icon: "arrow.clockwise", prominent: true) { timer.again() }
                 AoomooaPillButton(title: "完成", icon: "checkmark") { timer.cancel() }
@@ -303,7 +295,7 @@ private struct TimerPresetTile: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: DS.Space.xs) {
+            VStack(spacing: 0) {
                 Text("\(minutes)")
                     .font(DS.Fonts.title)
                     .monospacedDigit()

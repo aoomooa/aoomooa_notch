@@ -1,191 +1,431 @@
 //
-//  AoomooaSettings.swift — 设置窗口里的「aoomooa」页
+//  AoomooaSettings.swift — 极简三栏设置（常规 · 模块 · 诊断与关于）
 //
-//  所有项都存在 UserDefaults（@AppStorage），改完立即生效，重启后保留。
+//  只保留真正生效的核心配置；所有项存在 UserDefaults / Defaults，改完立即生效、重启后保留。
 //
 
 import AppKit
+import Defaults
+import LaunchAtLogin
 import Security
 import SwiftUI
 
-struct AoomooaSettingsView: View {
+// MARK: - 侧栏底部品牌标识
+
+struct AoomooaSettingsSidebarBrand: View {
+    private var version: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
+
+    var body: some View {
+        HStack(spacing: DS.Space.s) {
+            Image("AoomooaLogo")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: DS.Size.brandLogoSmall, height: DS.Size.brandLogoSmall)
+                .clipShape(AoomooaSquircle())
+                .shadow(color: DS.Shadow.iconColor, radius: DS.Shadow.iconRadius, y: DS.Shadow.iconY)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("aoomooa🉐刘海屏")
+                    .font(DS.Fonts.caption(.medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                Text("v\(version)")
+                    .font(DS.Fonts.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, DS.Space.m)
+        .padding(.vertical, DS.Space.m)
+    }
+}
+
+// MARK: - 1. 常规（系统 · 手势 · 外观与媒体）
+
+struct AoomooaGeneralSettingsView: View {
     @AppStorage(AoomooaPrefs.Key.hoverDelay) private var hoverDelay = AoomooaPrefs.Default.hoverDelay
+    @AppStorage(AoomooaPrefs.Key.collapseDelay) private var collapseDelay = AoomooaPrefs.Default.collapseDelay
     @AppStorage(AoomooaPrefs.Key.swipeSensitivity) private var swipeSensitivity = AoomooaPrefs.Default.swipeSensitivity
     @AppStorage(AoomooaPrefs.Key.tintStrength) private var tintStrength = AoomooaPrefs.Default.tintStrength
     @AppStorage(AoomooaPrefs.Key.animationSpeed) private var animationSpeed = AoomooaPrefs.Default.animationSpeed
-    @AppStorage(AoomooaPrefs.Key.timerMinutes) private var timerMinutes = AoomooaPrefs.Default.timerMinutes
-    @AppStorage(AoomooaPrefs.Key.timerShowWhenClosed) private var timerShowWhenClosed = AoomooaPrefs.Default.timerShowWhenClosed
-    @AppStorage(AoomooaPrefs.Key.weatherCity) private var weatherCity = AoomooaPrefs.Default.weatherCity
 
-    @ObservedObject private var sites = FavouriteSitesModel.shared
-    @ObservedObject private var weather = WeatherModel.shared
-    @State private var newSiteTitle = ""
-    @State private var newSiteAddress = ""
-    @State private var addFailed = false
+    @ObservedObject private var coordinator = BoringViewCoordinator.shared
+    @Default(.showOnAllDisplays) private var showOnAllDisplays
+    @Default(.mediaController) private var mediaController
 
-    @State private var accessibilityGranted: Bool?
-    @State private var cleanupMessage: String?
-    @State private var cleaning = false
-    @State private var confirmReset = false
+    @State private var screens: [(uuid: String, name: String)] = NSScreen.screens.compactMap { screen in
+        guard let uuid = screen.displayUUID else { return nil }
+        return (uuid, screen.localizedName)
+    }
 
-    /// “名称”输入框的宽度
-    private static let siteTitleWidth: CGFloat = 140
+    private var availableMediaControllers: [MediaControllerType] {
+        MusicManager.shared.isNowPlayingDeprecated
+            ? MediaControllerType.allCases.filter { $0 != .nowPlaying }
+            : MediaControllerType.allCases
+    }
 
     var body: some View {
         Form {
+            systemSection
             gestureSection
             appearanceSection
-            sitesSection
-            timerSection
-            weatherSection
-            diagnosticsSection
-            resetSection
         }
         .formStyle(.grouped)
-        .navigationTitle(Text(verbatim: "aoomooa"))
-        .task { accessibilityGranted = await XPCHelperClient.shared.isAccessibilityAuthorized() }
+        .navigationTitle("常规")
     }
 
-    // MARK: 手势
+    private var systemSection: some View {
+        Section("系统") {
+            LaunchAtLogin.Toggle("开机自动启动")
+            Toggle("在菜单栏显示图标", isOn: Binding(
+                get: { Defaults[.menubarIcon] },
+                set: { Defaults[.menubarIcon] = $0 }
+            ))
+            Defaults.Toggle(key: .showOnAllDisplays) {
+                Text("在所有显示器上显示")
+            }
+            .onChange(of: showOnAllDisplays) {
+                NotificationCenter.default.post(name: .showOnAllDisplaysChanged, object: nil)
+            }
+            if !showOnAllDisplays && screens.count > 1 {
+                Picker("首选显示器", selection: $coordinator.preferredScreenUUID) {
+                    ForEach(screens, id: \.uuid) { screen in
+                        Text(screen.name).tag(screen.uuid as String?)
+                    }
+                }
+                .onChange(of: coordinator.preferredScreenUUID) {
+                    NotificationCenter.default.post(name: .selectedScreenChanged, object: nil)
+                }
+            }
+            Defaults.Toggle(key: .hideFromScreenRecording) {
+                Text("录屏与共享屏幕时隐藏")
+            }
+            Defaults.Toggle(key: .showOnLockScreen) {
+                Text("锁屏时显示")
+            }
+        }
+    }
 
     private var gestureSection: some View {
         Section {
             Slider(value: $hoverDelay, in: AoomooaPrefs.Limits.hoverDelay, step: 0.1) {
-                valueRow("悬停多久后展开", String(format: "%.1f 秒", hoverDelay))
+                aoomooaValueRow("悬停多久后展开", String(format: "%.1f 秒", hoverDelay))
+            }
+            Slider(value: $collapseDelay, in: AoomooaPrefs.Limits.collapseDelay, step: 0.5) {
+                aoomooaValueRow("移开多久后收起", String(format: "%.1f 秒", collapseDelay))
             }
             Slider(value: $swipeSensitivity, in: AoomooaPrefs.Limits.swipeSensitivity, step: 0.1) {
-                valueRow("左右滑切页灵敏度", "滑 \(Int(AoomooaPrefs.tabSwipeDistance)) pt 切页")
+                aoomooaValueRow("左右滑切页灵敏度", "滑 \(Int(AoomooaPrefs.tabSwipeDistance)) pt 切页")
             } minimumValueLabel: {
                 Text("迟钝")
             } maximumValueLabel: {
                 Text("灵敏")
             }
+            Toggle("展开时记住上次停留的页面", isOn: $coordinator.openLastTabByDefault)
+            Defaults.Toggle(key: .enableHaptics) {
+                Text("触感反馈")
+            }
         } header: {
-            Text("手势")
+            Text("手势与交互")
         } footer: {
-            Text("悬停时先立刻显示音乐，再等上面这段时间展开；流光走完一圈的时间也一样。")
+            Text("在刘海任意空白处右键可随时打开设置或退出应用。")
                 .font(DS.Fonts.caption)
                 .foregroundStyle(.secondary)
         }
     }
 
-    // MARK: 外观
-
     private var appearanceSection: some View {
-        Section {
+        Section("外观与媒体") {
             Slider(value: $tintStrength, in: AoomooaPrefs.Limits.tintStrength, step: 0.05) {
-                valueRow("封面取色强度", "\(Int((tintStrength * 100).rounded()))%")
+                aoomooaValueRow("封面取色强度", "\(Int((tintStrength * 100).rounded()))%")
             }
             Slider(value: $animationSpeed, in: AoomooaPrefs.Limits.animationSpeed, step: 0.25) {
-                valueRow("动画速度", String(format: "%.2g×", animationSpeed))
+                aoomooaValueRow("动画速度", String(format: "%.2g×", animationSpeed))
             } minimumValueLabel: {
                 Text("慢")
             } maximumValueLabel: {
                 Text("快")
             }
-        } header: {
-            Text("外观")
-        } footer: {
-            Text("取色强度 0% 是纯黑；动画速度同时影响展开、收起、切页和所有小动画。")
-                .font(DS.Fonts.caption)
-                .foregroundStyle(.secondary)
+            Picker("音乐来源", selection: $mediaController) {
+                ForEach(availableMediaControllers) { controller in
+                    Text(controller.displayName).tag(controller)
+                }
+            }
+            .onChange(of: mediaController) { _, _ in
+                NotificationCenter.default.post(name: .mediaControllerChanged, object: nil)
+            }
         }
     }
+}
 
-    // MARK: 常用网站
+// MARK: - 2. 模块（AI 哨兵 · 常用网站 · AI 入口 · 计时器 · 天气）
 
-    private var sitesSection: some View {
+struct AoomooaModulesSettingsView: View {
+    @AppStorage(AoomooaPrefs.Key.timerMinutes) private var timerMinutes = AoomooaPrefs.Default.timerMinutes
+    @AppStorage(AoomooaPrefs.Key.timerShowWhenClosed) private var timerShowWhenClosed = AoomooaPrefs.Default.timerShowWhenClosed
+    @AppStorage(AoomooaPrefs.Key.weatherCity) private var weatherCity = AoomooaPrefs.Default.weatherCity
+    @AppStorage(AoomooaPrefs.Key.sentinelEnabled) private var sentinelEnabled = AoomooaPrefs.Default.sentinelEnabled
+    @AppStorage(AoomooaPrefs.Key.sentinelTimeoutAntigravity) private var timeoutAntigravity = AoomooaPrefs.Default.sentinelTimeoutAntigravity
+    @AppStorage(AoomooaPrefs.Key.sentinelTimeoutDeepSeek) private var timeoutDeepSeek = AoomooaPrefs.Default.sentinelTimeoutDeepSeek
+    @AppStorage(AoomooaPrefs.Key.sentinelTimeoutClaude) private var timeoutClaude = AoomooaPrefs.Default.sentinelTimeoutClaude
+
+    @ObservedObject private var sites = FavouriteSitesModel.shared
+    @ObservedObject private var aiSites = FavouriteSitesModel.ai
+    @ObservedObject private var weather = WeatherModel.shared
+    @ObservedObject private var sentinel = AoomooaSentinelModel.shared
+    @State private var copiedTokenPath = false
+    @State private var copiedInstallCmd = false
+    @State private var copiedClaudePrompt = false
+    @State private var showSentinelTools = false
+
+    private var sentinelInstallCommand: String {
+        let scriptPath = Bundle.main.resourceURL?
+            .appendingPathComponent("sentinel/install.sh").path
+            ?? "\(AoomooaDiagnostics.fixedInstallPath)/Contents/Resources/sentinel/install.sh"
+        return "bash \"\(scriptPath)\""
+    }
+
+    private static let claudeCustomInstruction = "仅在多步骤或较耗时的长任务中调用 set_notch_status 工具：开始长任务时传 working，停下来需要我确认/决策前传 attention，给出最终答复前传 done。普通的简短问答不要调用此工具。"
+
+    var body: some View {
+        Form {
+            sentinelSection
+            SiteListSettingsSection(
+                title: "常用网站",
+                placeholder: "网址，比如 aoomooa.art",
+                resetLabel: "恢复默认网站",
+                footer: "在刘海首页右键网站图标也可更换自定义图片或重新获取图标。",
+                model: sites
+            )
+            SiteListSettingsSection(
+                title: "AI 入口",
+                placeholder: "网址，比如 chat.deepseek.com",
+                resetLabel: "恢复默认 AI",
+                footer: "显示在首页右侧独立模块，与常用网站分开排列。",
+                model: aiSites
+            )
+            timerSection
+            weatherSection
+        }
+        .formStyle(.grouped)
+        .navigationTitle("模块")
+    }
+
+    private var sentinelSection: some View {
         Section {
-            ForEach(Array(sites.sites.enumerated()), id: \.element.id) { index, site in
+            Toggle(isOn: $sentinelEnabled) {
                 HStack(spacing: DS.Space.s) {
-                    SiteIconView(site: site, size: DS.Size.appIconMin, revision: sites.iconRevision)
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(site.title)
-                        Text(site.url)
+                    Text("启用 AI 状态小灯")
+                    sentinelStatusBadge
+                }
+            }
+            .onChange(of: sentinelEnabled) { _, on in
+                sentinel.setEnabled(on)
+            }
+
+            if sentinelEnabled {
+                // 按刘海左→右固定顺序排列（左1 Antigravity · 左2 Claude · 左3 DeepSeek）
+                sentinelToolRow(source: .antigravity, timeout: $timeoutAntigravity)
+                    .onChange(of: timeoutAntigravity) { _, _ in sentinel.rescheduleTimers() }
+                sentinelToolRow(source: .claude, timeout: $timeoutClaude)
+                    .onChange(of: timeoutClaude) { _, _ in sentinel.rescheduleTimers() }
+                sentinelToolRow(source: .deepseek, timeout: $timeoutDeepSeek)
+                    .onChange(of: timeoutDeepSeek) { _, _ in sentinel.rescheduleTimers() }
+
+                DisclosureGroup("试灯与接入配置", isExpanded: $showSentinelTools) {
+                    VStack(alignment: .leading, spacing: DS.Space.s) {
+                        HStack(spacing: DS.Space.s) {
+                            sentinelTestButton("工作中", dot: sentinelDotColor(.working)) {
+                                sentinel.simulate(source: .antigravity, state: .working)
+                            }
+                            sentinelTestButton("已完成", dot: sentinelDotColor(.done)) {
+                                sentinel.simulate(source: .claude, state: .done)
+                            }
+                            sentinelTestButton("需确认", dot: sentinelDotColor(.attention)) {
+                                sentinel.simulate(source: .deepseek, state: .attention)
+                            }
+                            sentinelTestButton("长时间", dot: sentinelDotColor(.stale)) {
+                                sentinel.simulate(source: .claude, state: .stale)
+                            }
+                        }
+                        HStack(spacing: DS.Space.s) {
+                            sentinelTestButton("三灯齐亮") {
+                                sentinel.simulate(source: .antigravity, state: .working)
+                                sentinel.simulate(source: .claude, state: .done)
+                                sentinel.simulate(source: .deepseek, state: .attention)
+                            }
+                            sentinelTestButton("全部熄灭") {
+                                sentinel.clearAll()
+                            }
+                        }
+                    }
+
+                    LabeledContent("内置插件接入") {
+                        HStack(spacing: DS.Space.s) {
+                            Button(copiedInstallCmd ? "已复制命令" : "复制一键安装命令") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(sentinelInstallCommand, forType: .string)
+                                copiedInstallCmd = true
+                                Task {
+                                    try? await Task.sleep(for: .seconds(1.5))
+                                    copiedInstallCmd = false
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .tint(.secondary)
+                            .foregroundStyle(.primary)
+                            .help("在终端粘贴回车，自动为已安装的 Antigravity / Claude / DeepSeek 接入内置插件")
+
+                            Button(copiedClaudePrompt ? "已复制提示词" : "复制 Claude 提示词") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(Self.claudeCustomInstruction, forType: .string)
+                                copiedClaudePrompt = true
+                                Task {
+                                    try? await Task.sleep(for: .seconds(1.5))
+                                    copiedClaudePrompt = false
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .tint(.secondary)
+                            .foregroundStyle(.primary)
+                            .help("粘贴到 Claude 设置 → 个人偏好（Custom Instructions）")
+                        }
+                    }
+
+                    LabeledContent("监听地址") {
+                        Text(verbatim: "127.0.0.1:\(String(AoomooaPrefs.sentinelPort))")
                             .font(DS.Fonts.caption)
+                            .monospacedDigit()
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        Text("图标：" + (site.iconPath != nil ? "自己选的图片" : SiteIconCache.shared.sourceDescription(host: site.host)))
-                            .font(DS.Fonts.caption)
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
                             .textSelection(.enabled)
                     }
-                    Spacer(minLength: DS.Space.s)
-                    Button { sites.move(site, by: -1) } label: { Image(systemName: "chevron.up") }
-                        .disabled(index == 0)
-                        .help("上移")
-                    Button { sites.move(site, by: 1) } label: { Image(systemName: "chevron.down") }
-                        .disabled(index == sites.sites.count - 1)
-                        .help("下移")
-                    Button { sites.refetchIcon(for: site) } label: { Image(systemName: "arrow.clockwise") }
-                        .disabled(site.iconPath != nil)
-                        .help("重新获取图标")
-                    Button { sites.remove(site) } label: { Image(systemName: "trash") }
-                        .help("删除")
+
+                    LabeledContent("口令文件（0600）") {
+                        HStack(spacing: DS.Space.s) {
+                            Text(sentinel.tokenFilePath)
+                                .font(DS.Fonts.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .textSelection(.enabled)
+                            Button(copiedTokenPath ? "已复制" : "复制路径") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(sentinel.tokenFilePath, forType: .string)
+                                copiedTokenPath = true
+                                Task {
+                                    try? await Task.sleep(for: .seconds(1.5))
+                                    copiedTokenPath = false
+                                }
+                            }
+                            .controlSize(.small)
+                            .tint(.secondary)
+                        }
+                    }
                 }
-                .buttonStyle(.borderless)
             }
-            HStack(spacing: DS.Space.s) {
-                TextField("名称", text: $newSiteTitle, prompt: Text("名称（可不填）"))
-                    .labelsHidden()
-                    .frame(maxWidth: Self.siteTitleWidth)
-                TextField("网址", text: $newSiteAddress, prompt: Text("网址，比如 aoomooa.art"))
-                    .labelsHidden()
-                    .onSubmit(addSite)
-                Button("添加", action: addSite)
-                    .disabled(newSiteAddress.trimmingCharacters(in: .whitespaces).isEmpty)
+        } header: {
+            Text("AI 哨兵")
+        } footer: {
+            Text("AI 状态灯需为对应工具接入内置插件（展开上方“试灯与接入配置”复制安装命令，终端回车即可）；仅监听本机回环，空闲 0% CPU。")
+                .font(DS.Fonts.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var sentinelStatusBadge: some View {
+        if !sentinelEnabled {
+            EmptyView()
+        } else if sentinel.isListening {
+            HStack(spacing: DS.Space.xs) {
+                Circle()
+                    .fill(DS.Colors.success)
+                    .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
+                Text("运行中")
+                    .font(DS.Fonts.caption)
+                    .foregroundStyle(.secondary)
             }
-            if addFailed {
-                Text("网址无效，或者已经在列表里了")
+        } else if let err = sentinel.listenError {
+            HStack(spacing: DS.Space.xs) {
+                Circle()
+                    .fill(DS.Colors.warning)
+                    .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
+                Text(err)
                     .font(DS.Fonts.caption)
                     .foregroundStyle(DS.Colors.warning)
+                    .lineLimit(1)
             }
-        } header: {
-            HStack {
-                Text("常用网站")
-                Spacer()
-                Button("重新获取所有图标") { sites.refreshIcons(force: true) }
-                    .buttonStyle(.borderless)
-                    .font(DS.Fonts.caption)
-                Button("恢复默认网站") { sites.resetToDefaults() }
-                    .buttonStyle(.borderless)
-                    .font(DS.Fonts.caption)
-            }
-        } footer: {
-            Text("图标会按顺序找：网页里声明的 apple-touch-icon / icon → 网站根目录的 apple-touch-icon.png → Google / DuckDuckGo 图标服务。缓存超过一天会自动重新检查；网站刚换 logo 可以点 ↻ 立即更新。在刘海首页右键网站也能更换图标。")
+        } else {
+            Text("启动中…")
                 .font(DS.Fonts.caption)
                 .foregroundStyle(.secondary)
         }
     }
 
-    private func addSite() {
-        addFailed = !sites.add(title: newSiteTitle, address: newSiteAddress)
-        if !addFailed {
-            newSiteTitle = ""
-            newSiteAddress = ""
+    private func sentinelToolRow(source: SentinelSource, timeout: Binding<Int>) -> some View {
+        Stepper(value: timeout, in: AoomooaPrefs.Limits.sentinelTimeout) {
+            HStack(spacing: DS.Space.s) {
+                SentinelLogoView(source: source, size: DS.Size.appIconMin)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(source.displayName)
+                    if let record = sentinel.records[source], record.state != .idle {
+                        HStack(spacing: DS.Space.xs) {
+                            Circle()
+                                .fill(sentinelDotColor(record.state))
+                                .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
+                            Text(record.label)
+                                .font(DS.Fonts.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text("空闲")
+                            .font(DS.Fonts.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                Spacer(minLength: DS.Space.s)
+                Text("超时 \(timeout.wrappedValue) 分钟")
+                    .font(DS.Fonts.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
-    // MARK: 计时器
+    private func sentinelTestButton(_ title: String, dot: Color? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: DS.Space.xs) {
+                if let dot {
+                    Circle()
+                        .fill(dot)
+                        .frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
+                }
+                Text(title)
+                    .font(DS.Fonts.caption(.medium))
+                    .foregroundStyle(.primary)
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .tint(.secondary)
+    }
+
+    /// 设置页适配亮/暗两种模式（灰色工作灯不用纯白半透明，避免浅色模式下看不清）
+    private func sentinelDotColor(_ state: SentinelState) -> Color {
+        state == .working ? Color(nsColor: .secondaryLabelColor) : state.color
+    }
 
     private var timerSection: some View {
-        Section {
+        Section("计时器") {
             Stepper(value: $timerMinutes, in: AoomooaPrefs.Limits.timerMinutes) {
-                valueRow("默认时长", "\(timerMinutes) 分钟")
+                aoomooaValueRow("滚轮默认时长", "\(timerMinutes) 分钟")
             }
             Toggle("收起时在刘海上显示倒计时", isOn: $timerShowWhenClosed)
-        } header: {
-            Text("计时器")
-        } footer: {
-            Text("点顶栏的 ⏱ 或双指左右滑到计时器页，选 5 / 10 / 15 / 25 分钟，或用滚轮选 1–60 分钟；滚轮默认停在上面的时长。")
-                .font(DS.Fonts.caption)
-                .foregroundStyle(.secondary)
         }
     }
-
-    // MARK: 天气
 
     private var weatherSection: some View {
         Section {
@@ -207,21 +447,66 @@ struct AoomooaSettingsView: View {
         } header: {
             Text("天气")
         } footer: {
-            Text("数据来自 wttr.in，每 30 分钟更新一次。开着代理时自动定位可能不准，填上城市名（比如 Münster）就好。")
+            Text("数据来自 wttr.in（每 30 分钟缓存刷新），显示在第 3 页日历顶部。开代理时填城市名（如 Münster）更准。")
                 .font(DS.Fonts.caption)
                 .foregroundStyle(.secondary)
         }
     }
+}
 
-    // MARK: 诊断
+// MARK: - 3. 诊断与关于（品牌 · 后台进程 · 恢复默认 · 退出）
+
+struct AoomooaAboutSettingsView: View {
+    @ObservedObject private var coordinator = BoringViewCoordinator.shared
+    @ObservedObject private var sentinel = AoomooaSentinelModel.shared
+
+    @State private var cleanupMessage: String?
+    @State private var cleaning = false
+    @State private var confirmReset = false
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
+
+    var body: some View {
+        Form {
+            aboutSection
+            diagnosticsSection
+            actionsSection
+        }
+        .formStyle(.grouped)
+        .navigationTitle("诊断与关于")
+    }
+
+    private var aboutSection: some View {
+        Section {
+            HStack(spacing: DS.Space.m) {
+                Image("AoomooaLogo")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: DS.Size.brandLogo, height: DS.Size.brandLogo)
+                    .clipShape(AoomooaSquircle())
+                    .shadow(color: DS.Shadow.iconColor, radius: DS.Shadow.iconRadius, y: DS.Shadow.iconY)
+                VStack(alignment: .leading, spacing: DS.Space.xs) {
+                    Text("aoomooa🉐刘海屏")
+                        .font(DS.Fonts.title)
+                    Text("版本 \(appVersion) · GNU GPLv3（基于 Boring Notch 2.7.3）")
+                        .font(DS.Fonts.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, DS.Space.xs)
+        }
+    }
 
     private var diagnosticsSection: some View {
-        Section {
+        Section("诊断") {
             LabeledContent("安装路径") {
                 VStack(alignment: .trailing, spacing: 0) {
                     Text(Bundle.main.bundlePath).textSelection(.enabled)
                     if !AoomooaDiagnostics.isInstalledAtFixedPath {
-                        Text("不是 \(AoomooaDiagnostics.fixedInstallPath)，辅助功能权限可能反复失效")
+                        Text("建议安装在 \(AoomooaDiagnostics.fixedInstallPath)")
                             .font(DS.Fonts.caption)
                             .foregroundStyle(DS.Colors.warning)
                     }
@@ -233,25 +518,7 @@ struct AoomooaSettingsView: View {
                     .multilineTextAlignment(.trailing)
                     .textSelection(.enabled)
             }
-            LabeledContent("辅助功能权限") {
-                switch accessibilityGranted {
-                case .some(true): Text("已授权").foregroundStyle(DS.Colors.success)
-                case .some(false): Text("未授权").foregroundStyle(DS.Colors.warning)
-                case .none: Text("检查中…").foregroundStyle(.secondary)
-                }
-            }
-            Text(AoomooaDiagnostics.accessibilityExplanation)
-                .font(DS.Fonts.caption)
-                .foregroundStyle(.secondary)
-            HStack {
-                Button("打开“辅助功能”设置") { AoomooaDiagnostics.openAccessibilitySettings() }
-                Button("重新检查") {
-                    accessibilityGranted = nil
-                    Task { accessibilityGranted = await XPCHelperClient.shared.isAccessibilityAuthorized() }
-                }
-            }
-
-            LabeledContent("后台子进程", value: "\(AoomooaProcessGuard.shared.trackedCount) 个（本次启动的音乐读取进程）")
+            LabeledContent("后台子进程", value: "\(AoomooaProcessGuard.shared.trackedCount) 个（音乐读取进程）")
             HStack {
                 Button(cleaning ? "清理中…" : "清理残留后台进程") {
                     cleaning = true
@@ -262,7 +529,7 @@ struct AoomooaSettingsView: View {
                         switch n {
                         case .some(0): cleanupMessage = "没有发现残留进程"
                         case .some(let count): cleanupMessage = "已清理 \(count) 个残留的 mediaremote-adapter.pl"
-                        case .none: cleanupMessage = "现在没法检查（后台助手未响应）"
+                        case .none: cleanupMessage = "后台助手未响应"
                         }
                     }
                 }
@@ -273,46 +540,134 @@ struct AoomooaSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+
+    private var actionsSection: some View {
+        Section {
+            HStack {
+                Button("恢复默认设置…") { confirmReset = true }
+                    .confirmationDialog("把手势、外观、计时器、天气与 AI 哨兵恢复成默认值？", isPresented: $confirmReset) {
+                        Button("恢复默认", role: .destructive, action: resetPrefs)
+                        Button("取消", role: .cancel) {}
+                    } message: {
+                        Text("常用网站与 AI 入口不会被清空（各自有独立的“恢复默认”）。")
+                    }
+                Spacer()
+                Button("退出应用", role: .destructive) {
+                    NSApplication.shared.terminate(nil)
+                }
+            }
+        }
+    }
+
+    private func resetPrefs() {
+        AoomooaPrefs.resetAll()
+        coordinator.openLastTabByDefault = true
+        Defaults[.hudReplacement] = false
+        Defaults[.showPowerStatusNotifications] = false
+        sentinel.setEnabled(AoomooaPrefs.Default.sentinelEnabled)
+        sentinel.rescheduleTimers()
+    }
+}
+
+// MARK: - 共用小组件
+
+private func aoomooaValueRow(_ title: String, _ value: String) -> some View {
+    HStack {
+        Text(title)
+        Spacer()
+        Text(value)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+    }
+}
+
+/// 常用网站 / AI 入口共用的设置列表区块
+private struct SiteListSettingsSection: View {
+    let title: String
+    let placeholder: String
+    let resetLabel: String
+    let footer: String
+    @ObservedObject var model: FavouriteSitesModel
+
+    @State private var newTitle = ""
+    @State private var newAddress = ""
+    @State private var addFailed = false
+
+    private static let siteTitleWidth: CGFloat = 140
+
+    var body: some View {
+        Section {
+            ForEach(Array(model.sites.enumerated()), id: \.element.id) { index, site in
+                HStack(spacing: DS.Space.s) {
+                    SiteIconView(site: site, size: DS.Size.appIconMin, revision: model.iconRevision)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(site.title)
+                        Text(site.url)
+                            .font(DS.Fonts.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Text("图标：" + (site.iconPath != nil ? "自己选的图片" : SiteIconCache.shared.sourceDescription(host: site.host)))
+                            .font(DS.Fonts.caption)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
+                    Spacer(minLength: DS.Space.s)
+                    Button { model.move(site, by: -1) } label: { Image(systemName: "chevron.up") }
+                        .disabled(index == 0)
+                        .help("上移")
+                    Button { model.move(site, by: 1) } label: { Image(systemName: "chevron.down") }
+                        .disabled(index == model.sites.count - 1)
+                        .help("下移")
+                    Button { model.refetchIcon(for: site) } label: { Image(systemName: "arrow.clockwise") }
+                        .disabled(site.iconPath != nil)
+                        .help("重新获取图标")
+                    Button { model.remove(site) } label: { Image(systemName: "trash") }
+                        .help("删除")
+                }
+                .buttonStyle(.borderless)
+            }
+            HStack(spacing: DS.Space.s) {
+                TextField("名称", text: $newTitle, prompt: Text("名称（可不填）"))
+                    .labelsHidden()
+                    .frame(maxWidth: Self.siteTitleWidth)
+                TextField("网址", text: $newAddress, prompt: Text(placeholder))
+                    .labelsHidden()
+                    .onSubmit(add)
+                Button("添加", action: add)
+                    .disabled(newAddress.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            if addFailed {
+                Text("网址无效，或者已经在列表里了")
+                    .font(DS.Fonts.caption)
+                    .foregroundStyle(DS.Colors.warning)
+            }
         } header: {
-            Text("诊断")
+            HStack {
+                Text(title)
+                Spacer()
+                Button("重新获取所有图标") { model.refreshIcons(force: true) }
+                    .buttonStyle(.borderless)
+                    .font(DS.Fonts.caption)
+                Button(resetLabel) { model.resetToDefaults() }
+                    .buttonStyle(.borderless)
+                    .font(DS.Fonts.caption)
+            }
         } footer: {
-            Text("只会结束“父进程已经退出”的 mediaremote-adapter.pl，不会影响正在运行的其它 App。")
+            Text(footer)
                 .font(DS.Fonts.caption)
                 .foregroundStyle(.secondary)
         }
     }
 
-    // MARK: 恢复默认
-
-    private var resetSection: some View {
-        Section {
-            Button("恢复默认设置…") { confirmReset = true }
-                .confirmationDialog("把手势、外观、计时器和天气城市恢复成默认值？", isPresented: $confirmReset) {
-                    Button("恢复默认", role: .destructive, action: resetPrefs)
-                    Button("取消", role: .cancel) {}
-                } message: {
-                    Text("常用网站不会被清空（它有自己的“恢复默认网站”）。")
-                }
-        }
-    }
-
-    private func resetPrefs() {
-        hoverDelay = AoomooaPrefs.Default.hoverDelay
-        swipeSensitivity = AoomooaPrefs.Default.swipeSensitivity
-        tintStrength = AoomooaPrefs.Default.tintStrength
-        animationSpeed = AoomooaPrefs.Default.animationSpeed
-        timerMinutes = AoomooaPrefs.Default.timerMinutes
-        timerShowWhenClosed = AoomooaPrefs.Default.timerShowWhenClosed
-        weatherCity = AoomooaPrefs.Default.weatherCity
-    }
-
-    private func valueRow(_ title: String, _ value: String) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Text(value)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
+    private func add() {
+        addFailed = !model.add(title: newTitle, address: newAddress)
+        if !addFailed {
+            newTitle = ""
+            newAddress = ""
         }
     }
 }
@@ -325,12 +680,6 @@ enum AoomooaDiagnostics {
     static var isInstalledAtFixedPath: Bool {
         Bundle.main.bundlePath == fixedInstallPath
     }
-
-    static let accessibilityExplanation = """
-    替换系统音量 / 亮度浮窗需要“辅助功能”权限。macOS 把这个权限记在「应用标识 + 签名」上：\
-    用 scripts/build-install.sh 安装到 /Applications/aoomooa🉐刘海屏.app、并用固定的 Apple 开发证书签名，重新编译后就不用再授权。\
-    如果是临时签名（ad-hoc），每次编译签名都会变，需要在 系统设置 → 隐私与安全性 → 辅助功能 里删掉旧的 aoomooa 再重新勾选。
-    """
 
     /// 当前运行的这份 App 是用什么签名的
     static var signingSummary: String {
@@ -351,11 +700,5 @@ enum AoomooaDiagnostics {
             return team.map { "\(name)（团队 \($0)）" } ?? name
         }
         return "临时签名（ad-hoc）：每次编译都会变"
-    }
-
-    static func openAccessibilitySettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
-        }
     }
 }

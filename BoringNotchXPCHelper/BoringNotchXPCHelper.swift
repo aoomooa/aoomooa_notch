@@ -166,6 +166,28 @@ class BoringNotchXPCHelper: NSObject, BoringNotchXPCHelperProtocol {
         reply(ended)
     }
 
+    @objc func syncSentinelToken(_ token: String, with reply: @escaping (String?) -> Void) {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 32, trimmed.count <= 128,
+              trimmed.allSatisfy({ $0.isHexDigit }) else {
+            reply(nil)
+            return
+        }
+        let fm = FileManager.default
+        let dir = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            .appendingPathComponent(".aoomooa-notch", isDirectory: true)
+        let file = dir.appendingPathComponent("token")
+        do {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+            try Data(trimmed.utf8).write(to: file, options: .atomic)
+            try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+            reply(file.path)
+        } catch {
+            reply(nil)
+        }
+    }
+
     private static func isOrphanedAdapter(_ pid: Int32, marker: String) -> Bool {
         guard pid > 1, !marker.isEmpty else { return false }
         var kinfo = kinfo_proc()

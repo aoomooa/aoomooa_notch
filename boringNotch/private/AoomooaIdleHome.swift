@@ -24,29 +24,96 @@ struct FavouriteSite: Codable, Hashable, Identifiable {
 
 @MainActor
 final class FavouriteSitesModel: ObservableObject {
-    static let shared = FavouriteSitesModel()
-    private let key = "aoomooaFavouriteSites.v2"
+    static let shared = FavouriteSitesModel(
+        key: "aoomooaFavouriteSites.v3",
+        defaults: FavouriteSitesModel.defaultSites,
+        promptTitle: "添加常用网站",
+        promptHint: "输入网址，比如 aoomooa.art",
+        migrateFromKey: "aoomooaFavouriteSites.v2",
+        droppingHosts: ["bilibili.com", "www.bilibili.com", "chat.deepseek.com", "deepseek.com"]
+    )
 
-    /// First-run list — right-click a site to add, change the icon, or remove
-    static let defaults: [FavouriteSite] = [
-        .init(title: "aoomooa.art", url: "https://aoomooa.art"),
-        .init(title: "哔哩哔哩", url: "https://www.bilibili.com"),
+    /// 独立的 AI 入口列表（首页右侧独立模块）
+    static let ai = FavouriteSitesModel(
+        key: "aoomooaAISites.v1",
+        defaults: FavouriteSitesModel.defaultAISites,
+        promptTitle: "添加 AI 网站",
+        promptHint: "输入网址，比如 chat.deepseek.com",
+        carryIconsFromKey: "aoomooaFavouriteSites.v2"
+    )
+
+    private let key: String
+    let defaultList: [FavouriteSite]
+    private let promptTitle: String
+    private let promptHint: String
+
+    /// 首页常用网站默认列表（2×2）
+    static let defaultSites: [FavouriteSite] = [
+        .init(title: "aoomooa", url: "https://aoomooa.art"),
         .init(title: "GitHub", url: "https://github.com"),
         .init(title: "Cloudflare", url: "https://dash.cloudflare.com"),
-        .init(title: "DeepSeek", url: "https://chat.deepseek.com/"),
         .init(title: "X", url: "https://x.com"),
     ]
+
+    /// 首页独立 AI 模块默认列表
+    static let defaultAISites: [FavouriteSite] = [
+        .init(title: "DeepSeek", url: "https://chat.deepseek.com/"),
+        .init(title: "Gemini", url: "https://gemini.google.com/app?hl=zh"),
+    ]
+
+    /// 兼容旧引用
+    static var defaults: [FavouriteSite] { defaultSites }
 
     @Published private(set) var sites: [FavouriteSite]
     /// 右键“重新获取图标”后加一，图标视图据此重新加载
     @Published private(set) var iconRevision = 0
 
-    private init() {
+    private init(
+        key: String,
+        defaults: [FavouriteSite],
+        promptTitle: String,
+        promptHint: String,
+        migrateFromKey: String? = nil,
+        droppingHosts: Set<String> = [],
+        carryIconsFromKey: String? = nil
+    ) {
+        self.key = key
+        self.defaultList = defaults
+        self.promptTitle = promptTitle
+        self.promptHint = promptHint
+
         if let data = UserDefaults.standard.data(forKey: key),
-           let saved = try? JSONDecoder().decode([FavouriteSite].self, from: data) {
+           var saved = try? JSONDecoder().decode([FavouriteSite].self, from: data) {
+            var migratedTitle = false
+            for i in saved.indices where saved[i].host.lowercased() == "aoomooa.art" && saved[i].title == "aoomooa.art" {
+                saved[i].title = "aoomooa"
+                migratedTitle = true
+            }
             sites = saved
+            if migratedTitle { save() }
+        } else if let oldKey = migrateFromKey,
+                  let oldData = UserDefaults.standard.data(forKey: oldKey),
+                  let oldSites = try? JSONDecoder().decode([FavouriteSite].self, from: oldData) {
+            // 从旧版本迁移：保留用户自定义图标与其他网站，剔除已下线/移出的条目
+            let migrated = oldSites.filter { !droppingHosts.contains($0.host.lowercased()) }
+            sites = migrated.isEmpty ? defaults : migrated
+            save()
         } else {
-            sites = Self.defaults
+            var initial = defaults
+            // 若旧列表里为相同域名设置过自定义图标，一并带过来
+            if let carryKey = carryIconsFromKey,
+               let oldData = UserDefaults.standard.data(forKey: carryKey),
+               let oldSites = try? JSONDecoder().decode([FavouriteSite].self, from: oldData) {
+                let iconByHost = Dictionary(uniqueKeysWithValues: oldSites.compactMap { s in
+                    s.iconPath.map { (s.host.lowercased(), $0) }
+                })
+                for i in initial.indices {
+                    if let customPath = iconByHost[initial[i].host.lowercased()] {
+                        initial[i].iconPath = customPath
+                    }
+                }
+            }
+            sites = initial
         }
         refreshIcons()
     }
@@ -109,7 +176,7 @@ final class FavouriteSitesModel: ObservableObject {
 
     /// 恢复成第一次打开时的网站列表
     func resetToDefaults() {
-        withAnimation(DS.Motion.micro) { sites = Self.defaults }
+        withAnimation(DS.Motion.micro) { sites = defaultList }
         save()
     }
 
@@ -122,15 +189,29 @@ final class FavouriteSitesModel: ObservableObject {
         guard let url = URL(string: text), let host = url.host else { return false }
         guard !sites.contains(where: { $0.url == text }) else { return false }
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        add(title: name.isEmpty ? host.replacingOccurrences(of: "www.", with: "") : name, url: text)
+        let fallback = host.replacingOccurrences(of: "www.", with: "")
+        add(title: name.isEmpty ? fallback : name, url: text)
+        // 未手动填名称时，后台自动从网页 meta / <title> 抓取正式站点名
+        if name.isEmpty {
+            Task.detached(priority: .utility) { [weak self] in
+                guard let fetched = await SiteIconCache.shared.fetchSiteName(for: url),
+                      !fetched.isEmpty else { return }
+                await MainActor.run {
+                    guard let self,
+                          let idx = self.sites.firstIndex(where: { $0.url == text && $0.title == fallback }) else { return }
+                    self.sites[idx].title = fetched
+                    self.save()
+                }
+            }
+        }
         return true
     }
 
     /// Ask for a web address and add it
     func promptAdd() {
         let alert = NSAlert()
-        alert.messageText = "添加常用网站"
-        alert.informativeText = "输入网址，比如 aoomooa.art"
+        alert.messageText = promptTitle
+        alert.informativeText = promptHint
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
         field.placeholderString = "https://"
         alert.accessoryView = field
@@ -289,18 +370,16 @@ final class SystemStatusModel: ObservableObject {
     }
 }
 
-// MARK: - View
+// MARK: - View (页面 1：播放 · 常用网站 · 独立 AI 模块)
 
 struct AoomooaIdleHomeView: View {
     @ObservedObject private var sites = FavouriteSitesModel.shared
-    @ObservedObject private var status = SystemStatusModel.shared
+    @ObservedObject private var aiSites = FavouriteSitesModel.ai
     @EnvironmentObject var vm: BoringViewModel
 
-    /// 三个模块的宽度比例：播放 · 网站 ·（剩下给）状态
+    /// 三个模块的宽度比例：播放 · 常用网站 ·（剩下给）独立 AI
     private let playerShare: CGFloat = 0.35
-    private let sitesShare: CGFloat = 0.35
-    /// 用量超过这个比例就标成警告色
-    static let warnFraction: Double = 0.85
+    private let sitesShare: CGFloat = 0.37
 
     var body: some View {
         GeometryReader { g in
@@ -313,28 +392,18 @@ struct AoomooaIdleHomeView: View {
                 sitesGrid
                     .aoomooaModule()
                     .frame(width: usable * sitesShare)
-                statusColumn
+                aiColumn
                     .aoomooaModule()
                     .frame(maxWidth: .infinity)
             }
         }
         .onAppear {
-            status.start()
-            sites.refreshIcons()   // 缓存超过一天的图标在后台重新检查
+            sites.refreshIcons()
+            aiSites.refreshIcons()
         }
-        .onDisappear { status.stop() }
     }
 
-    private func header(_ text: String, _ icon: String) -> some View {
-        HStack(spacing: DS.Space.xs) {
-            Image(systemName: icon)
-            Text(text)
-        }
-        .font(DS.Fonts.caption(.semibold))
-        .foregroundStyle(DS.Colors.textSecondary)
-    }
-
-    // 常用网站：启动器式图标网格，按模块的宽高自动选 2×3 / 3×2 / 4×2 …
+    // 常用网站：启动器式图标网格（默认 4 个自动排 2×2）
     private var sitesGrid: some View {
         GeometryReader { g in
             let grid = AoomooaIconGrid(count: sites.sites.count, size: g.size)
@@ -348,39 +417,131 @@ struct AoomooaIdleHomeView: View {
                         SiteIconView(site: site, size: grid.iconSize, revision: sites.iconRevision)
                     }
                     .contextMenu {
-                        Button("更换图标…") { sites.chooseIcon(for: site) }
-                        if site.iconPath != nil {
-                            Button("恢复网站自带图标") { sites.resetIcon(for: site) }
-                        } else {
-                            Button("重新获取图标") { sites.refetchIcon(for: site) }
-                        }
-                        Divider()
-                        Button("添加网站…") { sites.promptAdd() }
-                        Button("移除") { sites.remove(site) }
+                        siteContextMenu(for: site, in: sites, addLabel: "添加网站…")
                     }
                 }
             }
             .frame(maxHeight: .infinity, alignment: .center)
+            .contentShape(Rectangle())
+            .contextMenu {
+                Button("添加网站…") { sites.promptAdd() }
+            }
         }
         // 模块底边再多留一点，图标离下边至少 DS.Space.l
         .padding(.bottom, DS.Space.l - DS.Space.m)
     }
 
-    // System status
-    private var statusColumn: some View {
-        VStack(alignment: .leading, spacing: DS.Space.s) {
-            HStack {
-                header("系统状态", "gauge.with.dots.needle.33percent")
-                Spacer(minLength: DS.Space.xs)
-                thermalBadge
+    // 独立 AI 模块：默认 2 个横向大胶囊卡片，3 个以上自动切图标网格（不加多余标题）
+    private var aiColumn: some View {
+        Group {
+            if aiSites.sites.count <= 2 {
+                VStack(spacing: DS.Space.s) {
+                    ForEach(aiSites.sites) { site in
+                        AoomooaAICardRow(site: site, revision: aiSites.iconRevision) {
+                            aiSites.open(site)
+                            withAnimation(AoomooaHover.collapseAnimation) { vm.close() }
+                        }
+                        .contextMenu {
+                            siteContextMenu(for: site, in: aiSites, addLabel: "添加 AI…")
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                GeometryReader { g in
+                    let grid = AoomooaIconGrid(count: aiSites.sites.count, size: g.size)
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: DS.Space.s), count: grid.columns),
+                              spacing: DS.Space.s) {
+                        ForEach(aiSites.sites) { site in
+                            AoomooaIconTile(title: site.title, iconSize: grid.iconSize, action: {
+                                aiSites.open(site)
+                                withAnimation(AoomooaHover.collapseAnimation) { vm.close() }
+                            }) {
+                                SiteIconView(site: site, size: grid.iconSize, revision: aiSites.iconRevision)
+                            }
+                            .contextMenu {
+                                siteContextMenu(for: site, in: aiSites, addLabel: "添加 AI…")
+                            }
+                        }
+                    }
+                    .frame(maxHeight: .infinity, alignment: .center)
+                }
             }
+        }
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button("添加 AI…") { aiSites.promptAdd() }
+        }
+    }
+
+    @ViewBuilder
+    private func siteContextMenu(for site: FavouriteSite, in model: FavouriteSitesModel, addLabel: String) -> some View {
+        Button("更换图标…") { model.chooseIcon(for: site) }
+        if site.iconPath != nil {
+            Button("恢复网站自带图标") { model.resetIcon(for: site) }
+        } else {
+            Button("重新获取图标") { model.refetchIcon(for: site) }
+        }
+        Divider()
+        Button(addLabel) { model.promptAdd() }
+        Button("移除") { model.remove(site) }
+    }
+}
+
+/// 首页 AI 模块里的横向大按钮（图标 + 名称 + 轻箭头）
+private struct AoomooaAICardRow: View {
+    let site: FavouriteSite
+    let revision: Int
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: DS.Space.s) {
+                SiteIconView(site: site, size: DS.Size.aiIcon, revision: revision)
+                Text(site.title)
+                    .font(DS.Fonts.body(.medium))
+                    .foregroundStyle(DS.Colors.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up.right")
+                    .font(DS.Fonts.caption(.semibold))
+                    .foregroundStyle(hovering ? DS.Colors.textSecondary : DS.Colors.textTertiary)
+            }
+            .padding(.horizontal, DS.Space.s)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+                    .fill(hovering ? DS.Colors.fillHover : DS.Colors.fill)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        }
+        .buttonStyle(AoomooaPressStyle())
+        .onHover { h in withAnimation(DS.Motion.micro) { hovering = h } }
+        .help(site.title)
+    }
+}
+
+// MARK: - System status view (页面 2 左侧：系统状态)
+
+struct AoomooaSystemStatusView: View {
+    @ObservedObject private var status = SystemStatusModel.shared
+    /// 用量超过这个比例就标成警告色
+    static let warnFraction: Double = 0.85
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
             StatRow(label: "CPU", value: "\(Int((status.cpu * 100).rounded()))%", fraction: status.cpu)
+            Spacer(minLength: DS.Space.xs)
             StatRow(label: "内存",
                     value: String(format: "%.1f / %.0f GB", status.memoryUsed / 1_073_741_824, status.memoryTotal / 1_073_741_824),
                     fraction: status.memoryTotal > 0 ? status.memoryUsed / status.memoryTotal : 0)
+            Spacer(minLength: DS.Space.xs)
             StatRow(label: "磁盘",
                     value: String(format: "剩 %.0f GB", status.diskFree / 1_000_000_000),
                     fraction: status.diskTotal > 0 ? 1 - status.diskFree / status.diskTotal : 0)
+            Spacer(minLength: DS.Space.xs)
             HStack {
                 Text("网络").font(DS.Fonts.caption).foregroundStyle(DS.Colors.textSecondary)
                 Spacer(minLength: DS.Space.xs)
@@ -390,11 +551,19 @@ struct AoomooaIdleHomeView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
+            Spacer(minLength: DS.Space.xs)
+            HStack {
+                Text("温度").font(DS.Fonts.caption).foregroundStyle(DS.Colors.textSecondary)
+                Spacer(minLength: DS.Space.xs)
+                thermalIndicator
+            }
         }
+        .onAppear { status.start() }
+        .onDisappear { status.stop() }
     }
 
     /// 成功色 = 正常；警告色 = 偏热；强调色 = 过热（只用规范里的语义色）
-    private var thermalBadge: some View {
+    private var thermalIndicator: some View {
         let (text, color): (String, Color) = {
             switch status.thermal {
             case .nominal: return ("正常", DS.Colors.success)
@@ -408,9 +577,6 @@ struct AoomooaIdleHomeView: View {
             Circle().fill(color).frame(width: DS.Size.statusDot, height: DS.Size.statusDot)
             Text(text).font(DS.Fonts.caption(.medium)).foregroundStyle(color)
         }
-        .padding(.horizontal, DS.Space.s)
-        .padding(.vertical, DS.Space.xs)
-        .background(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous).fill(DS.Colors.fill))
     }
 
     private func speed(_ bytesPerSec: Double) -> String {
@@ -439,7 +605,7 @@ private struct StatRow: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(DS.Colors.separator)
                     Capsule()
-                        .fill(fraction > AoomooaIdleHomeView.warnFraction ? DS.Colors.warning : DS.Colors.indicator)
+                        .fill(fraction > AoomooaSystemStatusView.warnFraction ? DS.Colors.warning : DS.Colors.indicator)
                         .frame(width: g.size.width * min(max(fraction, 0), 1))
                 }
             }

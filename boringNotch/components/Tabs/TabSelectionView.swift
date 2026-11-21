@@ -15,9 +15,9 @@ struct TabModel: Identifiable {
 }
 
 private let homeTab = TabModel(label: "Home", icon: "house.fill", view: .home)
-private let workspaceTab = TabModel(label: "Workspace", icon: "rectangle.split.2x1.fill", view: .reminders)
+private let workspaceTab = TabModel(label: "Workspace", icon: "rectangle.split.2x1.fill", view: .apps)
 
-// aoomooa: Music + Workspace (reminders on the left, app dock on the right)
+// aoomooa: 首页（媒体·网站·AI）+ 控制台（系统状态·启动器）；右侧 ⏱ 进入时间页（日历+天气·计时器）
 var tabs: [TabModel] {
     [homeTab, workspaceTab]
 }

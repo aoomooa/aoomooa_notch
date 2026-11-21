@@ -65,14 +65,12 @@ class BoringViewCoordinator: ObservableObject {
         didSet {
             if !alwaysShowTabs {
                 openLastTabByDefault = false
-                if ShelfStateViewModel.shared.isEmpty || !Defaults[.openShelfByDefault] {
-                    currentView = .home
-                }
+                currentView = .home
             }
         }
     }
 
-    @AppStorage("openLastTabByDefault") var openLastTabByDefault: Bool = false {
+    @AppStorage("openLastTabByDefault") var openLastTabByDefault: Bool = true {
         didSet {
             if openLastTabByDefault {
                 alwaysShowTabs = true

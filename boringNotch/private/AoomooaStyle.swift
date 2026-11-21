@@ -5,8 +5,8 @@
 import SwiftUI
 
 enum AoomooaStyle {
-    /// 双指左右滑能到的页面，顺序和顶栏图标从左到右一致：首页 · 工作台 · 天气+计时器 · 托盘
-    static let swipeOrder: [NotchViews] = [.home, .reminders, .timer, .shelf]
+    /// 双指左右滑能到的页面，顺序和顶栏图标从左到右一致：首页 · 控制台 · 时间（日历+天气+计时器）
+    static let swipeOrder: [NotchViews] = [.home, .apps, .timer]
 
     /// 展开后背景取封面颜色的强度（设置里 0–100%）
     static var tintStrength: Double { AoomooaPrefs.tintStrength }

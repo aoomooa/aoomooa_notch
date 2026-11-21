@@ -35,7 +35,7 @@ struct ContentView: View {
     @AppStorage(AoomooaPrefs.Key.tintStrength) private var tintStrength = AoomooaPrefs.Default.tintStrength  // aoomooa
     @AppStorage(AoomooaPrefs.Key.timerShowWhenClosed) private var timerShowWhenClosed = AoomooaPrefs.Default.timerShowWhenClosed  // aoomooa
     @ObservedObject private var notchTimer = NotchTimerModel.shared   // aoomooa
-    @State private var anyDropDebounceTask: Task<Void, Never>?
+    @ObservedObject private var sentinel = AoomooaSentinelModel.shared   // aoomooa: AI 哨兵
 
     @State private var gestureProgress: CGFloat = .zero
 
@@ -68,6 +68,15 @@ struct ContentView: View {
         )
     }
 
+    private var isMusicLiveActive: Bool {
+        (musicManager.isPlaying || !musicManager.isPlayerIdle) && coordinator.musicLiveActivityEnabled
+    }
+
+    /// AI 活跃时仅在媒体真正播放中展示外侧媒体翼（暂停即自动收翼，把空间还给 AI）
+    private var showsMediaWithSentinel: Bool {
+        coordinator.musicLiveActivityEnabled && musicManager.isPlaying
+    }
+
     private var computedChinWidth: CGFloat {
         var chinWidth: CGFloat = vm.closedNotchSize.width
 
@@ -75,11 +84,22 @@ struct ContentView: View {
             && vm.notchState == .closed && Defaults[.showPowerStatusNotifications]
         {
             chinWidth = 640
-        } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music)
-            && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle)
-            && coordinator.musicLiveActivityEnabled && !vm.hideOnClosed
+        } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
+            && notchTimer.showsOnClosedNotch(showWhileRunning: timerShowWhenClosed)
         {
-            chinWidth += (2 * max(0, vm.effectiveClosedNotchHeight - 12) + 20)
+            chinWidth += (2 * DS.Size.timerSide)
+        } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
+            && sentinel.showsOnClosedNotch
+        {
+            chinWidth += (2 * AoomooaSentinelLiveActivity.sideWidth(
+                for: sentinel.orderedActiveRecords.count,
+                withMedia: showsMediaWithSentinel
+            ))
+        } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music)
+            && vm.notchState == .closed && isMusicLiveActive && !vm.hideOnClosed
+        {
+            let mediaWing = max(DS.Size.sentinelMediaWing, vm.effectiveClosedNotchHeight - 8)
+            chinWidth += (2 * mediaWing)
         } else if !coordinator.expandingView.show && vm.notchState == .closed
             && (!musicManager.isPlaying && musicManager.isPlayerIdle) && Defaults[.showNotHumanFace]
             && !vm.hideOnClosed
@@ -162,6 +182,8 @@ struct ContentView: View {
                         return view
                             .animation(vm.notchState == .open ? openAnimation : closeAnimation, value: vm.notchState)
                             .animation(DS.Motion.panel, value: gestureProgress)
+                            .animation(DS.Motion.panel, value: showsMediaWithSentinel)
+                            .animation(DS.Motion.panel, value: sentinel.orderedActiveRecords.count)
                     }
                     .contentShape(Rectangle())
                     .onHover { hovering in
@@ -211,32 +233,37 @@ struct ContentView: View {
                         }
                     }
                     .onChange(of: vm.isBatteryPopoverActive) {
-                        if !vm.isBatteryPopoverActive && !isHovering && vm.notchState == .open && !SharingStateManager.shared.preventNotchClose {
+                        if !vm.isBatteryPopoverActive && !sentinel.isPopoverActive && !isHovering && vm.notchState == .open && !SharingStateManager.shared.preventNotchClose {
                             hoverTask?.cancel()
                             hoverTask = Task {
                                 try? await Task.sleep(for: .milliseconds(100))
                                 guard !Task.isCancelled else { return }
                                 await MainActor.run {
-                                    if !self.vm.isBatteryPopoverActive && !self.isHovering && self.vm.notchState == .open && !SharingStateManager.shared.preventNotchClose {
+                                    if !self.vm.isBatteryPopoverActive && !self.sentinel.isPopoverActive && !self.isHovering && self.vm.notchState == .open && !SharingStateManager.shared.preventNotchClose {
                                         self.vm.close()
                                     }
                                 }
                             }
                         }
                     }
+                    .onChange(of: sentinel.isPopoverActive) {
+                        if !sentinel.isPopoverActive && !vm.isBatteryPopoverActive && !isHovering && vm.notchState == .open && !SharingStateManager.shared.preventNotchClose {
+                            handleHover(false)
+                        }
+                    }
                     .sensoryFeedback(.alignment, trigger: haptics)
                     .contextMenu {
-                        Button("Settings") {
+                        Button("设置…") {
                             DispatchQueue.main.async {
                                 SettingsWindowController.shared.showWindow()
                             }
                         }
                         .keyboardShortcut(KeyEquivalent(","), modifiers: .command)
-                        //                    Button("Edit") { // Doesnt work....
-                        //                        let dn = DynamicNotch(content: EditPanelView())
-                        //                        dn.toggle()
-                        //                    }
-                        //                    .keyboardShortcut("E", modifiers: .command)
+                        Divider()
+                        Button("退出") {
+                            NSApplication.shared.terminate(nil)
+                        }
+                        .keyboardShortcut(KeyEquivalent("q"), modifiers: .command)
                     }
                 if vm.chinHeight > 0 {
                     Rectangle()
@@ -254,35 +281,8 @@ struct ContentView: View {
             anchor: .top
         )
         .animation(DS.Motion.panel, value: gestureProgress)
-        .background(dragDetector)
         .preferredColorScheme(.dark)
         .environmentObject(vm)
-        .onChange(of: vm.anyDropZoneTargeting) { _, isTargeted in
-            anyDropDebounceTask?.cancel()
-
-            if isTargeted {
-                if vm.notchState == .closed {
-                    coordinator.currentView = .shelf
-                    doOpen()
-                }
-                return
-            }
-
-            anyDropDebounceTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(500))
-                guard !Task.isCancelled else { return }
-
-                if vm.dropEvent {
-                    vm.dropEvent = false
-                    return
-                }
-
-                vm.dropEvent = false
-                if !SharingStateManager.shared.preventNotchClose {
-                    vm.close()
-                }
-            }
-        }
     }
 
     @ViewBuilder
@@ -332,10 +332,23 @@ struct ContentView: View {
                               .transition(.opacity)
                       } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
                                     && notchTimer.showsOnClosedNotch(showWhileRunning: timerShowWhenClosed) {
-                          // aoomooa: 计时器 — 左边 ⏱，右边 mm:ss（时间到时显示“时间到”）
-                          AoomooaTimerLiveActivity(height: vm.effectiveClosedNotchHeight,
-                                                   middleWidth: vm.closedNotchSize.width - cornerRadiusInsets.closed.top)
-                      } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music) && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle) && coordinator.musicLiveActivityEnabled && !vm.hideOnClosed {
+                          // aoomooa: 计时器 — 左边 ⏱，右边 mm:ss（若同时有 AI 活跃则右侧边缘轻叠小灯）
+                          HStack(spacing: DS.Space.xs) {
+                              AoomooaTimerLiveActivity(height: vm.effectiveClosedNotchHeight,
+                                                       middleWidth: vm.closedNotchSize.width - cornerRadiusInsets.closed.top)
+                              if sentinel.showsOnClosedNotch {
+                                  AoomooaSentinelEdgeDot()
+                              }
+                          }
+                      } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
+                                    && sentinel.showsOnClosedNotch {
+                          // aoomooa: AI 哨兵（内侧左1↔右1，媒体播放时外侧镜像伸出封面与波形，暂停自动收翼）
+                          AoomooaSentinelLiveActivity(
+                              height: vm.effectiveClosedNotchHeight,
+                              middleWidth: vm.closedNotchSize.width - cornerRadiusInsets.closed.top,
+                              showsMedia: showsMediaWithSentinel
+                          )
+                      } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music) && vm.notchState == .closed && isMusicLiveActive && !vm.hideOnClosed {
                           MusicLiveActivity()
                               .frame(alignment: .center)
                       } else if !coordinator.expandingView.show && vm.notchState == .closed && (!musicManager.isPlaying && musicManager.isPlayerIdle) && Defaults[.showNotHumanFace] && !vm.hideOnClosed  {
@@ -393,20 +406,14 @@ struct ContentView: View {
             if vm.notchState == .open {
                 ZStack(alignment: .top) {   // aoomooa: pages overlap while switching
                     switch coordinator.currentView {
-                    case .home:
-                        AoomooaIdleHomeView()   // aoomooa: now playing · sites · system status
+                    case .home, .shelf:
+                        AoomooaIdleHomeView()   // aoomooa 页面 1：播放 · 常用网站 · AI
                             .transition(pageTransition)
-                    case .shelf:
-                        NotchTrayView()   // aoomooa: AirDrop · tray · copy · remove
-                            .transition(pageTransition)
-                    case .reminders:
-                        NotchWorkspaceView()   // aoomooa: reminders | apps
-                            .transition(pageTransition)
-                    case .apps:
-                        NotchLauncherView()
+                    case .apps, .reminders:
+                        NotchWorkspaceView()    // aoomooa 页面 2：系统状态 · 工具启动器
                             .transition(pageTransition)
                     case .timer:
-                        NotchTimerView()   // aoomooa: ⏱ 计时器
+                        NotchTimerView()        // aoomooa 页面 3：日历与天气 · 紧凑计时器
                             .transition(pageTransition)
                     }
                 }
@@ -424,7 +431,6 @@ struct ContentView: View {
                 .opacity(gestureProgress != 0 ? 1.0 - min(abs(gestureProgress) * 0.1, 0.3) : 1.0)
             }
         }
-        .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], delegate: GeneralDropTargetDelegate(isTargeted: $vm.generalDropTargeting))
     }
 
     @ViewBuilder
@@ -450,19 +456,19 @@ struct ContentView: View {
 
     @ViewBuilder
     func MusicLiveActivity() -> some View {
-        HStack {
-            Image(nsImage: musicManager.albumArt)
-                .resizable()
-                .clipped()
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: MusicPlayerImageSizes.cornerRadiusInset.closed)
-                )
-                .matchedGeometryEffect(id: "albumArt", in: albumArtNamespace)
-                .frame(
-                    width: max(0, vm.effectiveClosedNotchHeight - 12),
-                    height: max(0, vm.effectiveClosedNotchHeight - 12)
-                )
+        let wingWidth = max(DS.Size.sentinelMediaWing, vm.effectiveClosedNotchHeight - 8)
+        let artworkSize = max(16, min(20, vm.effectiveClosedNotchHeight - 13))
+        let auraColor = AoomooaMediaAuraArtwork.resolvedAuraColor(from: musicManager.avgColor)
+
+        HStack(spacing: 0) {
+            AoomooaMediaAuraArtwork(
+                image: musicManager.albumArt,
+                auraColor: auraColor,
+                size: artworkSize,
+                isPlaying: musicManager.isPlaying
+            )
+            .matchedGeometryEffect(id: "albumArt", in: albumArtNamespace)
+            .frame(width: wingWidth, height: vm.effectiveClosedNotchHeight)
 
             Rectangle()
                 .fill(.black)
@@ -508,61 +514,21 @@ struct ContentView: View {
                         && Defaults[.sneakPeekStyles] == .inline)
                         ? 380
                         : vm.closedNotchSize.width
-                            + -cornerRadiusInsets.closed.top
+                            - cornerRadiusInsets.closed.top
                 )
 
-            HStack {
-                if useMusicVisualizer {
-                    Rectangle()
-                        .fill(
-                            Defaults[.coloredSpectrogram]
-                                ? Color(nsColor: musicManager.avgColor).gradient
-                                : Color.gray.gradient
-                        )
-                        .frame(width: 50, alignment: .center)
-                        .matchedGeometryEffect(id: "spectrum", in: albumArtNamespace)
-                        .mask {
-                            AudioSpectrumView(isPlaying: $musicManager.isPlaying)
-                                .frame(width: 16, height: 12)
-                        }
-                } else {
-                    LottieAnimationContainer()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .frame(
-                width: max(
-                    0,
-                    vm.effectiveClosedNotchHeight - 12
-                        + gestureProgress / 2
-                ),
-                height: max(
-                    0,
-                    vm.effectiveClosedNotchHeight - 12
-                ),
-                alignment: .center
+            AoomooaMediaSpectrumWing(
+                isPlaying: $musicManager.isPlaying,
+                auraColor: auraColor,
+                coexisting: false
             )
+            .matchedGeometryEffect(id: "spectrum", in: albumArtNamespace)
+            .frame(width: wingWidth, height: vm.effectiveClosedNotchHeight)
         }
         .frame(
             height: vm.effectiveClosedNotchHeight,
             alignment: .center
         )
-    }
-
-    @ViewBuilder
-    var dragDetector: some View {
-        if Defaults[.boringShelf] && vm.notchState == .closed {
-            Color.clear
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-        .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], isTargeted: $vm.dragDetectorTargeting) { providers in
-            vm.dropEvent = true
-            ShelfStateViewModel.shared.load(providers)
-            return true
-        }
-        } else {
-            EmptyView()
-        }
     }
 
     private func doOpen() {
@@ -614,8 +580,13 @@ struct ContentView: View {
             }
         } else {
             collapseTask?.cancel()
+            // aoomooa: 展开态移开鼠标后停留 collapseDelay（默认 3 秒）再收起；
+            // 收起态仅等 80ms 取消流光，避免擦过刘海后延迟误展开。
+            let delay: Duration = vm.notchState == .open
+                ? .seconds(max(Double(AoomooaHover.exitGraceMs) / 1000.0, AoomooaHover.collapseDelay))
+                : .milliseconds(AoomooaHover.exitGraceMs)
             collapseTask = Task {
-                try? await Task.sleep(for: .milliseconds(AoomooaHover.exitGraceMs))
+                try? await Task.sleep(for: delay)
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     self.collapseTask = nil
@@ -630,6 +601,7 @@ struct ContentView: View {
                     }
                     if self.vm.notchState == .open
                         && !self.vm.isBatteryPopoverActive
+                        && !self.sentinel.isPopoverActive
                         && !SharingStateManager.shared.preventNotchClose {
                         withAnimation(AoomooaHover.collapseAnimation) { self.vm.close() }
                     }
@@ -747,8 +719,10 @@ struct ContentView: View {
             }
             return
         }
+        // aoomooa: 时间页（日历列表 + 计时器滚轮）本身需要上下滑动，屏蔽上滑收起手势避免误触
         guard vm.notchState == .open && !vm.isHoveringCalendar,
-              !AoomooaGestureGate.verticalScrollerHovered else { return }   // aoomooa: 滚轮上滑不收起
+              coordinator.currentView != .timer,
+              !AoomooaGestureGate.verticalScrollerHovered else { return }
 
         withAnimation(animationSpring) {
             gestureProgress = (translation / Defaults[.gestureSensitivity]) * -20

@@ -261,6 +261,21 @@ final class XPCHelperClient: NSObject {
             return false
         }
     }
+
+    nonisolated func syncSentinelToken(_ token: String) async -> String? {
+        do {
+            let service = await MainActor.run {
+                ensureRemoteService()
+            }
+            return try await service.withContinuation { service, continuation in
+                service.syncSentinelToken(token) { path in
+                    continuation.resume(returning: path)
+                }
+            }
+        } catch {
+            return nil
+        }
+    }
 }
 
 extension Notification.Name {

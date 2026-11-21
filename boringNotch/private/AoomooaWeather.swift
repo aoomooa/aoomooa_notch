@@ -304,3 +304,76 @@ struct AoomooaWeatherCard: View {
         NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Weather.app"))
     }
 }
+
+/// 融合在日历标题行右侧的紧凑天气胶囊（复用 WeatherModel / wttr.in，零新权限）
+struct AoomooaWeatherCompactBadge: View {
+    @ObservedObject private var weather = WeatherModel.shared
+    @State private var hovering = false
+
+    var body: some View {
+        Group {
+            if let s = weather.snapshot {
+                HStack(spacing: DS.Space.xs) {
+                    Image(systemName: s.symbol)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(DS.Colors.textPrimary)
+                    Text("\(s.temperature)°")
+                        .font(DS.Fonts.caption(.semibold).monospacedDigit())
+                        .foregroundStyle(DS.Colors.textPrimary)
+                    Text(summary(s))
+                        .font(DS.Fonts.caption)
+                        .foregroundStyle(DS.Colors.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    if weather.isLoading {
+                        ProgressView().controlSize(.mini)
+                    }
+                }
+                .help(tooltip(s))
+            } else if weather.isLoading {
+                HStack(spacing: DS.Space.xs) {
+                    ProgressView().controlSize(.mini)
+                    Text("天气…")
+                        .font(DS.Fonts.caption)
+                        .foregroundStyle(DS.Colors.textSecondary)
+                }
+            } else {
+                HStack(spacing: DS.Space.xs) {
+                    Image(systemName: "cloud.slash")
+                    Text(weather.lastFailed ? "重试天气" : "天气")
+                }
+                .font(DS.Fonts.caption)
+                .foregroundStyle(DS.Colors.textSecondary)
+            }
+        }
+        .padding(.horizontal, DS.Space.xs)
+        .padding(.vertical, 2)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous)
+                .fill(hovering ? DS.Colors.fill : Color.clear)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: DS.Radius.small, style: .continuous))
+        .onHover { h in withAnimation(DS.Motion.micro) { hovering = h } }
+        .onTapGesture {
+            if weather.snapshot == nil { weather.refresh() } else { AoomooaWeatherCard.openWeatherApp() }
+        }
+        .contextMenu {
+            Button("刷新天气") { weather.refresh() }
+            Button("打开“天气”App") { AoomooaWeatherCard.openWeatherApp() }
+        }
+        .onAppear { weather.refreshIfStale() }
+    }
+
+    private func summary(_ s: WeatherSnapshot) -> String {
+        if let h = s.high, let l = s.low {
+            return "\(s.condition) · \(l)°~\(h)°"
+        }
+        return s.condition
+    }
+
+    private func tooltip(_ s: WeatherSnapshot) -> String {
+        var parts = [s.city, "\(s.temperature)° \(s.condition)"]
+        if let f = s.feelsLike { parts.append("体感 \(f)°") }
+        return parts.joined(separator: " · ") + "（点按打开天气，右键刷新）"
+    }
+}

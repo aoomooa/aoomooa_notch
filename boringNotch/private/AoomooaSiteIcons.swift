@@ -188,8 +188,15 @@ final class SiteIconCache: @unchecked Sendable {
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         guard let result = try? await URLSession.shared.data(for: request),
               let http = result.1 as? HTTPURLResponse, http.statusCode == 200 else { return [] }
-        let html = String(decoding: result.0.prefix(Self.htmlLimit), as: UTF8.self)
         let base = http.url ?? page
+        // 如果被重定向到别的登录域名（如 drive.google.com → accounts.google.com），
+        // 不要抓取登录页的通用图标，直接交给后面的域名图标服务处理
+        let normalizeHost: (String?) -> String = { h in
+            let lower = (h ?? "").lowercased()
+            return lower.hasPrefix("www.") ? String(lower.dropFirst(4)) : lower
+        }
+        if normalizeHost(base.host) != normalizeHost(page.host) { return [] }
+        let html = String(decoding: result.0.prefix(Self.htmlLimit), as: UTF8.self)
 
         guard let tagRegex = try? NSRegularExpression(pattern: "<link\\b[^>]*>", options: [.caseInsensitive]) else { return [] }
         var found: [Candidate] = []
@@ -332,6 +339,68 @@ final class SiteIconCache: @unchecked Sendable {
         var result = [clean]
         if parts.count > 2 { result.append(parts.suffix(2).joined(separator: ".")) }
         return result
+    }
+
+    /// 从网页 meta（apple-mobile-web-app-title / application-name / og:site_name）或 <title> 抓取站点名称
+    func fetchSiteName(for page: URL) async -> String? {
+        var request = URLRequest(url: page, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: Self.timeout)
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        guard let result = try? await URLSession.shared.data(for: request),
+              let http = result.1 as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+        let base = http.url ?? page
+        let normalizeHost: (String?) -> String = { h in
+            let lower = (h ?? "").lowercased()
+            return lower.hasPrefix("www.") ? String(lower.dropFirst(4)) : lower
+        }
+        if normalizeHost(base.host) != normalizeHost(page.host) { return nil }
+        let html = String(decoding: result.0.prefix(Self.htmlLimit), as: UTF8.self)
+        return Self.parseSiteName(from: html)
+    }
+
+    static func parseSiteName(from html: String) -> String? {
+        // 1. 优先取站方明确声明的短站点名 meta
+        if let metaRegex = try? NSRegularExpression(pattern: "<meta\\b[^>]*>", options: [.caseInsensitive]) {
+            let range = NSRange(html.startIndex..., in: html)
+            var found: [String: String] = [:]
+            for match in metaRegex.matches(in: html, range: range) {
+                guard let r = Range(match.range, in: html) else { continue }
+                let tag = String(html[r])
+                let key = (attribute("name", in: tag) ?? attribute("property", in: tag))?.lowercased()
+                guard let key, let raw = attribute("content", in: tag) else { continue }
+                let value = decodeHTMLEntities(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !value.isEmpty { found[key] = value }
+            }
+            for preferred in ["apple-mobile-web-app-title", "application-name", "og:site_name"] {
+                if let hit = found[preferred], !hit.isEmpty { return hit }
+            }
+        }
+        // 2. 退回 <title>
+        if let titleRegex = try? NSRegularExpression(pattern: "<title[^>]*>([\\s\\S]*?)</title>", options: [.caseInsensitive]),
+           let match = titleRegex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+           let r = Range(match.range(at: 1), in: html) {
+            let raw = decodeHTMLEntities(String(html[r]))
+                .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !raw.isEmpty else { return nil }
+            if raw.count <= 24 { return raw }
+            for sep in [" - ", " | ", " — ", " · ", " – "] {
+                if let part = raw.components(separatedBy: sep).first?.trimmingCharacters(in: .whitespaces),
+                   !part.isEmpty, part.count <= 24 {
+                    return part
+                }
+            }
+            return String(raw.prefix(24))
+        }
+        return nil
+    }
+
+    private static func decodeHTMLEntities(_ s: String) -> String {
+        s.replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&apos;", with: "'")
     }
 
     /// 取 HTML 标签里的属性值

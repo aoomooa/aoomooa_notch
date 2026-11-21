@@ -157,6 +157,8 @@ enum DS {
         /// 启动器 / 常用网站图标（最大 / 最小）
         static let appIcon: CGFloat = 38
         static let appIconMin: CGFloat = 20
+        /// AI 独立横向卡片里的图标
+        static let aiIcon: CGFloat = 30
         /// 网站小图标放在白底上时占的比例
         static let faviconInset: CGFloat = 0.62
         /// 日历条：日期圆圈直径、整条高度
@@ -180,6 +182,14 @@ enum DS {
         /// 计时器：圆环直径、收起时左右两侧的宽度
         static let timerRing: CGFloat = 72
         static let timerSide: CGFloat = 44
+        /// AI 哨兵：收起时左右两侧宽度、媒体共存外翼宽度、主灯 / 副灯直径
+        static let sentinelSide: CGFloat = 34
+        static let sentinelMediaWing: CGFloat = 26
+        static let sentinelLight: CGFloat = 8
+        static let sentinelDotSmall: CGFloat = 6
+        /// 品牌徽标（设置关于页 / 侧栏底角）
+        static let brandLogo: CGFloat = 52
+        static let brandLogoSmall: CGFloat = 24
         /// 分钟滚轮：每行高度、所在卡片的宽度
         static let wheelRow: CGFloat = 22
         static let wheelTile: CGFloat = 100
