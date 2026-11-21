@@ -1,19 +1,171 @@
 //
-//  AoomooaSettings.swift — 设置窗口里的「aoomooa」页
+//  AoomooaSettings.swift — 极简三栏设置（常规 · 模块 · 诊断与关于）
 //
-//  所有项都存在 UserDefaults（@AppStorage），改完立即生效，重启后保留。
+//  只保留真正生效的核心配置；所有项存在 UserDefaults / Defaults，改完立即生效、重启后保留。
 //
 
 import AppKit
+import Defaults
+import LaunchAtLogin
 import Security
 import SwiftUI
 
-struct AoomooaSettingsView: View {
+// MARK: - 1. 常规（系统 · 手势 · 外观与联动）
+
+struct AoomooaGeneralSettingsView: View {
     @AppStorage(AoomooaPrefs.Key.hoverDelay) private var hoverDelay = AoomooaPrefs.Default.hoverDelay
     @AppStorage(AoomooaPrefs.Key.collapseDelay) private var collapseDelay = AoomooaPrefs.Default.collapseDelay
     @AppStorage(AoomooaPrefs.Key.swipeSensitivity) private var swipeSensitivity = AoomooaPrefs.Default.swipeSensitivity
     @AppStorage(AoomooaPrefs.Key.tintStrength) private var tintStrength = AoomooaPrefs.Default.tintStrength
     @AppStorage(AoomooaPrefs.Key.animationSpeed) private var animationSpeed = AoomooaPrefs.Default.animationSpeed
+
+    @ObservedObject private var coordinator = BoringViewCoordinator.shared
+    @Default(.showOnAllDisplays) private var showOnAllDisplays
+    @Default(.mediaController) private var mediaController
+    @Default(.hudReplacement) private var hudReplacement
+
+    @State private var screens: [(uuid: String, name: String)] = NSScreen.screens.compactMap { screen in
+        guard let uuid = screen.displayUUID else { return nil }
+        return (uuid, screen.localizedName)
+    }
+    @State private var accessibilityAuthorized = false
+
+    private var availableMediaControllers: [MediaControllerType] {
+        MusicManager.shared.isNowPlayingDeprecated
+            ? MediaControllerType.allCases.filter { $0 != .nowPlaying }
+            : MediaControllerType.allCases
+    }
+
+    var body: some View {
+        Form {
+            systemSection
+            gestureSection
+            appearanceAndSystemSection
+        }
+        .formStyle(.grouped)
+        .navigationTitle("常规")
+        .task {
+            accessibilityAuthorized = await XPCHelperClient.shared.isAccessibilityAuthorized()
+        }
+        .onAppear {
+            XPCHelperClient.shared.startMonitoringAccessibilityAuthorization()
+        }
+        .onDisappear {
+            XPCHelperClient.shared.stopMonitoringAccessibilityAuthorization()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .accessibilityAuthorizationChanged)) { note in
+            if let granted = note.userInfo?["granted"] as? Bool {
+                accessibilityAuthorized = granted
+            }
+        }
+    }
+
+    private var systemSection: some View {
+        Section("系统") {
+            LaunchAtLogin.Toggle("开机自动启动")
+            Toggle("在菜单栏显示图标", isOn: Binding(
+                get: { Defaults[.menubarIcon] },
+                set: { Defaults[.menubarIcon] = $0 }
+            ))
+            Defaults.Toggle(key: .showOnAllDisplays) {
+                Text("在所有显示器上显示")
+            }
+            .onChange(of: showOnAllDisplays) {
+                NotificationCenter.default.post(name: .showOnAllDisplaysChanged, object: nil)
+            }
+            if !showOnAllDisplays && screens.count > 1 {
+                Picker("首选显示器", selection: $coordinator.preferredScreenUUID) {
+                    ForEach(screens, id: \.uuid) { screen in
+                        Text(screen.name).tag(screen.uuid as String?)
+                    }
+                }
+                .onChange(of: coordinator.preferredScreenUUID) {
+                    NotificationCenter.default.post(name: .selectedScreenChanged, object: nil)
+                }
+            }
+            Defaults.Toggle(key: .hideFromScreenRecording) {
+                Text("录屏与共享屏幕时隐藏")
+            }
+            Defaults.Toggle(key: .showOnLockScreen) {
+                Text("锁屏时显示")
+            }
+        }
+    }
+
+    private var gestureSection: some View {
+        Section {
+            Slider(value: $hoverDelay, in: AoomooaPrefs.Limits.hoverDelay, step: 0.1) {
+                aoomooaValueRow("悬停多久后展开", String(format: "%.1f 秒", hoverDelay))
+            }
+            Slider(value: $collapseDelay, in: AoomooaPrefs.Limits.collapseDelay, step: 0.5) {
+                aoomooaValueRow("移开多久后收起", String(format: "%.1f 秒", collapseDelay))
+            }
+            Slider(value: $swipeSensitivity, in: AoomooaPrefs.Limits.swipeSensitivity, step: 0.1) {
+                aoomooaValueRow("左右滑切页灵敏度", "滑 \(Int(AoomooaPrefs.tabSwipeDistance)) pt 切页")
+            } minimumValueLabel: {
+                Text("迟钝")
+            } maximumValueLabel: {
+                Text("灵敏")
+            }
+            Toggle("展开时记住上次停留的页面", isOn: $coordinator.openLastTabByDefault)
+            Defaults.Toggle(key: .enableHaptics) {
+                Text("触感反馈")
+            }
+        } header: {
+            Text("手势与交互")
+        } footer: {
+            Text("在刘海任意空白处右键可随时打开设置或退出应用。")
+                .font(DS.Fonts.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var appearanceAndSystemSection: some View {
+        Section("外观与系统联动") {
+            Slider(value: $tintStrength, in: AoomooaPrefs.Limits.tintStrength, step: 0.05) {
+                aoomooaValueRow("封面取色强度", "\(Int((tintStrength * 100).rounded()))%")
+            }
+            Slider(value: $animationSpeed, in: AoomooaPrefs.Limits.animationSpeed, step: 0.25) {
+                aoomooaValueRow("动画速度", String(format: "%.2g×", animationSpeed))
+            } minimumValueLabel: {
+                Text("慢")
+            } maximumValueLabel: {
+                Text("快")
+            }
+            Picker("音乐来源", selection: $mediaController) {
+                ForEach(availableMediaControllers) { controller in
+                    Text(controller.displayName).tag(controller)
+                }
+            }
+            .onChange(of: mediaController) { _, _ in
+                NotificationCenter.default.post(name: .mediaControllerChanged, object: nil)
+            }
+            Defaults.Toggle(key: .hudReplacement) {
+                Text("替换系统音量 / 亮度浮窗")
+            }
+            .disabled(!accessibilityAuthorized)
+            if !accessibilityAuthorized {
+                HStack {
+                    Text("替换系统浮窗需要“辅助功能”权限")
+                        .font(DS.Fonts.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("前往授权") {
+                        XPCHelperClient.shared.requestAccessibilityAuthorization()
+                    }
+                    .controlSize(.small)
+                }
+            }
+            Defaults.Toggle(key: .showPowerStatusNotifications) {
+                Text("充电状态提醒")
+            }
+        }
+    }
+}
+
+// MARK: - 2. 模块（AI 哨兵 · 常用网站 · AI 入口 · 计时器 · 天气）
+
+struct AoomooaModulesSettingsView: View {
     @AppStorage(AoomooaPrefs.Key.timerMinutes) private var timerMinutes = AoomooaPrefs.Default.timerMinutes
     @AppStorage(AoomooaPrefs.Key.timerShowWhenClosed) private var timerShowWhenClosed = AoomooaPrefs.Default.timerShowWhenClosed
     @AppStorage(AoomooaPrefs.Key.weatherCity) private var weatherCity = AoomooaPrefs.Default.weatherCity
@@ -25,140 +177,32 @@ struct AoomooaSettingsView: View {
     @ObservedObject private var sites = FavouriteSitesModel.shared
     @ObservedObject private var aiSites = FavouriteSitesModel.ai
     @ObservedObject private var weather = WeatherModel.shared
-    @ObservedObject private var coordinator = BoringViewCoordinator.shared
     @ObservedObject private var sentinel = AoomooaSentinelModel.shared
     @State private var copiedTokenPath = false
 
-    @State private var accessibilityGranted: Bool?
-    @State private var cleanupMessage: String?
-    @State private var cleaning = false
-    @State private var confirmReset = false
-
     var body: some View {
         Form {
-            gestureSection
-            appearanceSection
+            sentinelSection
             SiteListSettingsSection(
                 title: "常用网站",
                 placeholder: "网址，比如 aoomooa.art",
                 resetLabel: "恢复默认网站",
-                footer: "图标会按顺序找：网页里声明的 apple-touch-icon / icon → 网站根目录的 apple-touch-icon.png → Google / DuckDuckGo 图标服务。缓存超过一天会自动重新检查；网站刚换 logo 可以点 ↻ 立即更新。在刘海首页右键网站也能更换图标。",
+                footer: "在刘海首页右键网站图标也可更换自定义图片或重新获取图标。",
                 model: sites
             )
             SiteListSettingsSection(
                 title: "AI 入口",
                 placeholder: "网址，比如 chat.deepseek.com",
                 resetLabel: "恢复默认 AI",
-                footer: "显示在首页右侧独立 AI 模块，与常用网站分开排列。",
+                footer: "显示在首页右侧独立模块，与常用网站分开排列。",
                 model: aiSites
             )
             timerSection
             weatherSection
-            sentinelSection
-            diagnosticsSection
-            resetSection
         }
         .formStyle(.grouped)
-        .navigationTitle(Text(verbatim: "aoomooa"))
-        .task { accessibilityGranted = await XPCHelperClient.shared.isAccessibilityAuthorized() }
+        .navigationTitle("模块")
     }
-
-    // MARK: 手势
-
-    private var gestureSection: some View {
-        Section {
-            Slider(value: $hoverDelay, in: AoomooaPrefs.Limits.hoverDelay, step: 0.1) {
-                valueRow("悬停多久后展开", String(format: "%.1f 秒", hoverDelay))
-            }
-            Slider(value: $collapseDelay, in: AoomooaPrefs.Limits.collapseDelay, step: 0.5) {
-                valueRow("移开多久后收起", String(format: "%.1f 秒", collapseDelay))
-            }
-            Slider(value: $swipeSensitivity, in: AoomooaPrefs.Limits.swipeSensitivity, step: 0.1) {
-                valueRow("左右滑切页灵敏度", "滑 \(Int(AoomooaPrefs.tabSwipeDistance)) pt 切页")
-            } minimumValueLabel: {
-                Text("迟钝")
-            } maximumValueLabel: {
-                Text("灵敏")
-            }
-            Toggle("展开时记住上次停留的页面", isOn: $coordinator.openLastTabByDefault)
-        } header: {
-            Text("手势")
-        } footer: {
-            Text("悬停时先立刻显示音乐，再等上面这段时间展开；流光走完一圈的时间也一样。")
-                .font(DS.Fonts.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: 外观
-
-    private var appearanceSection: some View {
-        Section {
-            Slider(value: $tintStrength, in: AoomooaPrefs.Limits.tintStrength, step: 0.05) {
-                valueRow("封面取色强度", "\(Int((tintStrength * 100).rounded()))%")
-            }
-            Slider(value: $animationSpeed, in: AoomooaPrefs.Limits.animationSpeed, step: 0.25) {
-                valueRow("动画速度", String(format: "%.2g×", animationSpeed))
-            } minimumValueLabel: {
-                Text("慢")
-            } maximumValueLabel: {
-                Text("快")
-            }
-        } header: {
-            Text("外观")
-        } footer: {
-            Text("取色强度 0% 是纯黑；动画速度同时影响展开、收起、切页和所有小动画。")
-                .font(DS.Fonts.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: 计时器
-
-    private var timerSection: some View {
-        Section {
-            Stepper(value: $timerMinutes, in: AoomooaPrefs.Limits.timerMinutes) {
-                valueRow("默认时长", "\(timerMinutes) 分钟")
-            }
-            Toggle("收起时在刘海上显示倒计时", isOn: $timerShowWhenClosed)
-        } header: {
-            Text("计时器")
-        } footer: {
-            Text("点顶栏的 ⏱ 或双指左右滑到时间页（日历与天气 · 计时器），选 5 / 10 / 15 / 25 分钟，或用滚轮选 1–60 分钟；滚轮默认停在上面的时长。")
-                .font(DS.Fonts.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: 天气
-
-    private var weatherSection: some View {
-        Section {
-            LabeledContent("城市") {
-                TextField("城市", text: $weatherCity, prompt: Text("留空 = 按网络位置自动判断"))
-                    .labelsHidden()
-                    .multilineTextAlignment(.trailing)
-                    .onSubmit { weather.refresh() }
-            }
-            HStack {
-                Button(weather.isLoading ? "刷新中…" : "立即刷新") { weather.refresh() }
-                    .disabled(weather.isLoading)
-                if let s = weather.snapshot {
-                    Text("上次：\(s.city) \(s.temperature)° \(s.condition)")
-                        .font(DS.Fonts.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } header: {
-            Text("天气")
-        } footer: {
-            Text("数据来自 wttr.in，每 30 分钟更新一次。开着代理时自动定位可能不准，填上城市名（比如 Münster）就好。")
-                .font(DS.Fonts.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: AI 哨兵
 
     private var sentinelSection: some View {
         Section {
@@ -184,17 +228,17 @@ struct AoomooaSettingsView: View {
             }
 
             Stepper(value: $timeoutAntigravity, in: AoomooaPrefs.Limits.sentinelTimeout) {
-                valueRow("Antigravity「很久没消息」超时", "\(timeoutAntigravity) 分钟")
+                aoomooaValueRow("Antigravity「很久没消息」超时", "\(timeoutAntigravity) 分钟")
             }
             .onChange(of: timeoutAntigravity) { _, _ in sentinel.rescheduleTimers() }
 
             Stepper(value: $timeoutDeepSeek, in: AoomooaPrefs.Limits.sentinelTimeout) {
-                valueRow("DeepSeek「很久没消息」超时", "\(timeoutDeepSeek) 分钟")
+                aoomooaValueRow("DeepSeek「很久没消息」超时", "\(timeoutDeepSeek) 分钟")
             }
             .onChange(of: timeoutDeepSeek) { _, _ in sentinel.rescheduleTimers() }
 
             Stepper(value: $timeoutClaude, in: AoomooaPrefs.Limits.sentinelTimeout) {
-                valueRow("Claude「很久没消息」超时", "\(timeoutClaude) 分钟")
+                aoomooaValueRow("Claude「很久没消息」超时", "\(timeoutClaude) 分钟")
             }
             .onChange(of: timeoutClaude) { _, _ in sentinel.rescheduleTimers() }
 
@@ -226,7 +270,7 @@ struct AoomooaSettingsView: View {
                     Button("橙·长时间") { sentinel.simulate(source: .claude, state: .stale) }
                 }
                 HStack(spacing: DS.Space.s) {
-                    Button("三灯齐亮（左1↔右1 · 左2↔右2 · 左3↔右3）") {
+                    Button("三灯齐亮") {
                         sentinel.simulate(source: .antigravity, state: .working)
                         sentinel.simulate(source: .claude, state: .done)
                         sentinel.simulate(source: .deepseek, state: .attention)
@@ -238,13 +282,77 @@ struct AoomooaSettingsView: View {
         } header: {
             Text("AI 哨兵")
         } footer: {
-            Text("仅监听本机回环 127.0.0.1，强制校验 X-Notch-Token 并拒绝带 Origin 的浏览器请求；空闲 0% CPU，不写日志、不存对话内容。接入脚本见仓库 scripts/sentinel/。")
+            Text("仅监听本机回环 127.0.0.1，强制校验 X-Notch-Token 并拒绝浏览器 Origin；空闲 0% CPU，不写日志、不落盘内容。")
                 .font(DS.Fonts.caption)
                 .foregroundStyle(.secondary)
         }
     }
 
-    // MARK: 诊断
+    private var timerSection: some View {
+        Section("计时器") {
+            Stepper(value: $timerMinutes, in: AoomooaPrefs.Limits.timerMinutes) {
+                aoomooaValueRow("滚轮默认时长", "\(timerMinutes) 分钟")
+            }
+            Toggle("收起时在刘海上显示倒计时", isOn: $timerShowWhenClosed)
+        }
+    }
+
+    private var weatherSection: some View {
+        Section {
+            LabeledContent("城市") {
+                TextField("城市", text: $weatherCity, prompt: Text("留空 = 按网络位置自动判断"))
+                    .labelsHidden()
+                    .multilineTextAlignment(.trailing)
+                    .onSubmit { weather.refresh() }
+            }
+            HStack {
+                Button(weather.isLoading ? "刷新中…" : "立即刷新") { weather.refresh() }
+                    .disabled(weather.isLoading)
+                if let s = weather.snapshot {
+                    Text("上次：\(s.city) \(s.temperature)° \(s.condition)")
+                        .font(DS.Fonts.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("天气")
+        } footer: {
+            Text("数据来自 wttr.in（每 30 分钟缓存刷新），显示在第 3 页日历顶部。开代理时填城市名（如 Münster）更准。")
+                .font(DS.Fonts.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - 3. 诊断与关于（权限 · 后台进程 · 恢复默认 · 退出）
+
+struct AoomooaAboutSettingsView: View {
+    @ObservedObject private var coordinator = BoringViewCoordinator.shared
+    @ObservedObject private var sentinel = AoomooaSentinelModel.shared
+
+    @State private var accessibilityGranted: Bool?
+    @State private var cleanupMessage: String?
+    @State private var cleaning = false
+    @State private var confirmReset = false
+
+    var body: some View {
+        Form {
+            aboutSection
+            diagnosticsSection
+            actionsSection
+        }
+        .formStyle(.grouped)
+        .navigationTitle("诊断与关于")
+        .task { accessibilityGranted = await XPCHelperClient.shared.isAccessibilityAuthorized() }
+    }
+
+    private var aboutSection: some View {
+        Section("关于") {
+            LabeledContent("应用名称", value: "aoomooa🉐刘海屏")
+            LabeledContent("版本", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
+            LabeledContent("开源协议", value: "GNU GPLv3（基于 Boring Notch）")
+        }
+    }
 
     private var diagnosticsSection: some View {
         Section {
@@ -271,9 +379,6 @@ struct AoomooaSettingsView: View {
                 case .none: Text("检查中…").foregroundStyle(.secondary)
                 }
             }
-            Text(AoomooaDiagnostics.accessibilityExplanation)
-                .font(DS.Fonts.caption)
-                .foregroundStyle(.secondary)
             HStack {
                 Button("打开“辅助功能”设置") { AoomooaDiagnostics.openAccessibilitySettings() }
                 Button("重新检查") {
@@ -282,7 +387,7 @@ struct AoomooaSettingsView: View {
                 }
             }
 
-            LabeledContent("后台子进程", value: "\(AoomooaProcessGuard.shared.trackedCount) 个（本次启动的音乐读取进程）")
+            LabeledContent("后台子进程", value: "\(AoomooaProcessGuard.shared.trackedCount) 个（音乐读取进程）")
             HStack {
                 Button(cleaning ? "清理中…" : "清理残留后台进程") {
                     cleaning = true
@@ -293,7 +398,7 @@ struct AoomooaSettingsView: View {
                         switch n {
                         case .some(0): cleanupMessage = "没有发现残留进程"
                         case .some(let count): cleanupMessage = "已清理 \(count) 个残留的 mediaremote-adapter.pl"
-                        case .none: cleanupMessage = "现在没法检查（后台助手未响应）"
+                        case .none: cleanupMessage = "后台助手未响应"
                         }
                     }
                 }
@@ -307,51 +412,47 @@ struct AoomooaSettingsView: View {
         } header: {
             Text("诊断")
         } footer: {
-            Text("只会结束“父进程已经退出”的 mediaremote-adapter.pl，不会影响正在运行的其它 App。")
+            Text(AoomooaDiagnostics.accessibilityExplanation)
                 .font(DS.Fonts.caption)
                 .foregroundStyle(.secondary)
         }
     }
 
-    // MARK: 恢复默认
-
-    private var resetSection: some View {
+    private var actionsSection: some View {
         Section {
-            Button("恢复默认设置…") { confirmReset = true }
-                .confirmationDialog("把手势、外观、计时器和天气城市恢复成默认值？", isPresented: $confirmReset) {
-                    Button("恢复默认", role: .destructive, action: resetPrefs)
-                    Button("取消", role: .cancel) {}
-                } message: {
-                    Text("常用网站不会被清空（它有自己的“恢复默认网站”）。")
+            HStack {
+                Button("恢复默认设置…") { confirmReset = true }
+                    .confirmationDialog("把手势、外观、计时器、天气与 AI 哨兵恢复成默认值？", isPresented: $confirmReset) {
+                        Button("恢复默认", role: .destructive, action: resetPrefs)
+                        Button("取消", role: .cancel) {}
+                    } message: {
+                        Text("常用网站与 AI 入口不会被清空（各自有独立的“恢复默认”）。")
+                    }
+                Spacer()
+                Button("退出应用", role: .destructive) {
+                    NSApplication.shared.terminate(nil)
                 }
+            }
         }
     }
 
     private func resetPrefs() {
-        hoverDelay = AoomooaPrefs.Default.hoverDelay
-        collapseDelay = AoomooaPrefs.Default.collapseDelay
-        swipeSensitivity = AoomooaPrefs.Default.swipeSensitivity
-        tintStrength = AoomooaPrefs.Default.tintStrength
-        animationSpeed = AoomooaPrefs.Default.animationSpeed
-        timerMinutes = AoomooaPrefs.Default.timerMinutes
-        timerShowWhenClosed = AoomooaPrefs.Default.timerShowWhenClosed
-        weatherCity = AoomooaPrefs.Default.weatherCity
-        sentinelEnabled = AoomooaPrefs.Default.sentinelEnabled
-        timeoutAntigravity = AoomooaPrefs.Default.sentinelTimeoutAntigravity
-        timeoutDeepSeek = AoomooaPrefs.Default.sentinelTimeoutDeepSeek
-        timeoutClaude = AoomooaPrefs.Default.sentinelTimeoutClaude
-        sentinel.setEnabled(sentinelEnabled)
+        AoomooaPrefs.resetAll()
         coordinator.openLastTabByDefault = true
+        sentinel.setEnabled(AoomooaPrefs.Default.sentinelEnabled)
+        sentinel.rescheduleTimers()
     }
+}
 
-    private func valueRow(_ title: String, _ value: String) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Text(value)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-        }
+// MARK: - 共用小组件
+
+private func aoomooaValueRow(_ title: String, _ value: String) -> some View {
+    HStack {
+        Text(title)
+        Spacer()
+        Text(value)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
     }
 }
 

@@ -242,17 +242,17 @@ struct ContentView: View {
                     }
                     .sensoryFeedback(.alignment, trigger: haptics)
                     .contextMenu {
-                        Button("Settings") {
+                        Button("设置…") {
                             DispatchQueue.main.async {
                                 SettingsWindowController.shared.showWindow()
                             }
                         }
                         .keyboardShortcut(KeyEquivalent(","), modifiers: .command)
-                        //                    Button("Edit") { // Doesnt work....
-                        //                        let dn = DynamicNotch(content: EditPanelView())
-                        //                        dn.toggle()
-                        //                    }
-                        //                    .keyboardShortcut("E", modifiers: .command)
+                        Divider()
+                        Button("退出") {
+                            NSApplication.shared.terminate(nil)
+                        }
+                        .keyboardShortcut(KeyEquivalent("q"), modifiers: .command)
                     }
                 if vm.chinHeight > 0 {
                     Rectangle()
