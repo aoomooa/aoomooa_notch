@@ -445,7 +445,7 @@ struct AoomooaAboutSettingsView: View {
                 VStack(alignment: .leading, spacing: DS.Space.xs) {
                     Text("aoomooa🉐刘海屏")
                         .font(DS.Fonts.title)
-                    Text("版本 \(appVersion) · GNU GPLv3（基于 Boring Notch）")
+                    Text("版本 \(appVersion) · GNU GPLv3（基于 Boring Notch 2.7.3）")
                         .font(DS.Fonts.caption)
                         .foregroundStyle(.secondary)
                 }
