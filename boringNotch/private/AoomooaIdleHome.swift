@@ -49,7 +49,7 @@ final class FavouriteSitesModel: ObservableObject {
 
     /// 首页常用网站默认列表（2×2）
     static let defaultSites: [FavouriteSite] = [
-        .init(title: "aoomooa.art", url: "https://aoomooa.art"),
+        .init(title: "aoomooa", url: "https://aoomooa.art"),
         .init(title: "GitHub", url: "https://github.com"),
         .init(title: "Cloudflare", url: "https://dash.cloudflare.com"),
         .init(title: "X", url: "https://x.com"),
@@ -83,8 +83,14 @@ final class FavouriteSitesModel: ObservableObject {
         self.promptHint = promptHint
 
         if let data = UserDefaults.standard.data(forKey: key),
-           let saved = try? JSONDecoder().decode([FavouriteSite].self, from: data) {
+           var saved = try? JSONDecoder().decode([FavouriteSite].self, from: data) {
+            var migratedTitle = false
+            for i in saved.indices where saved[i].host.lowercased() == "aoomooa.art" && saved[i].title == "aoomooa.art" {
+                saved[i].title = "aoomooa"
+                migratedTitle = true
+            }
             sites = saved
+            if migratedTitle { save() }
         } else if let oldKey = migrateFromKey,
                   let oldData = UserDefaults.standard.data(forKey: oldKey),
                   let oldSites = try? JSONDecoder().decode([FavouriteSite].self, from: oldData) {
@@ -183,7 +189,21 @@ final class FavouriteSitesModel: ObservableObject {
         guard let url = URL(string: text), let host = url.host else { return false }
         guard !sites.contains(where: { $0.url == text }) else { return false }
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        add(title: name.isEmpty ? host.replacingOccurrences(of: "www.", with: "") : name, url: text)
+        let fallback = host.replacingOccurrences(of: "www.", with: "")
+        add(title: name.isEmpty ? fallback : name, url: text)
+        // 未手动填名称时，后台自动从网页 meta / <title> 抓取正式站点名
+        if name.isEmpty {
+            Task.detached(priority: .utility) { [weak self] in
+                guard let fetched = await SiteIconCache.shared.fetchSiteName(for: url),
+                      !fetched.isEmpty else { return }
+                await MainActor.run {
+                    guard let self,
+                          let idx = self.sites.firstIndex(where: { $0.url == text && $0.title == fallback }) else { return }
+                    self.sites[idx].title = fetched
+                    self.save()
+                }
+            }
+        }
         return true
     }
 
