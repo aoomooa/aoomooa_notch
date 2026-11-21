@@ -12,7 +12,6 @@ struct BoringHeader: View {
     @EnvironmentObject var vm: BoringViewModel
     @ObservedObject var batteryModel = BatteryStatusViewModel.shared
     @ObservedObject var coordinator = BoringViewCoordinator.shared
-    @StateObject var tvm = ShelfStateViewModel.shared
     @ObservedObject var notchTimer = NotchTimerModel.shared   // aoomooa
     var body: some View {
         HStack(spacing: 0) {
@@ -59,7 +58,7 @@ struct BoringHeader: View {
                             }
                             .buttonStyle(PlainButtonStyle())
                         }
-                        // aoomooa: ⏱ 计时器按钮（计时中显示强调色）
+                        // aoomooa: ⏱ 时间页按钮（日历+天气 · 计时器；计时中显示强调色）
                         Button(action: {
                             withAnimation(DS.Motion.page) {
                                 coordinator.currentView = coordinator.currentView == .timer ? .home : .timer
@@ -73,22 +72,6 @@ struct BoringHeader: View {
                                         .foregroundColor(notchTimer.phase == .idle
                                                          ? (coordinator.currentView == .timer ? DS.Colors.textPrimary : DS.Colors.textSecondary)
                                                          : DS.Colors.accent)
-                                        .imageScale(.medium)
-                                }
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        // aoomooa: Tray button, left of the settings gear
-                        Button(action: {
-                            withAnimation(DS.Motion.page) {
-                                coordinator.currentView = coordinator.currentView == .shelf ? .home : .shelf
-                            }
-                        }) {
-                            Capsule()
-                                .fill(coordinator.currentView == .shelf ? DS.Colors.fillHover : DS.Colors.background)
-                                .frame(width: DS.Size.control, height: DS.Size.control)
-                                .overlay {
-                                    Image(systemName: "tray.full")
-                                        .foregroundColor(coordinator.currentView == .shelf ? DS.Colors.textPrimary : DS.Colors.textSecondary)
                                         .imageScale(.medium)
                                 }
                         }

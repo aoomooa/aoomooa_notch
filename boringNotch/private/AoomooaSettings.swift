@@ -10,6 +10,7 @@ import SwiftUI
 
 struct AoomooaSettingsView: View {
     @AppStorage(AoomooaPrefs.Key.hoverDelay) private var hoverDelay = AoomooaPrefs.Default.hoverDelay
+    @AppStorage(AoomooaPrefs.Key.collapseDelay) private var collapseDelay = AoomooaPrefs.Default.collapseDelay
     @AppStorage(AoomooaPrefs.Key.swipeSensitivity) private var swipeSensitivity = AoomooaPrefs.Default.swipeSensitivity
     @AppStorage(AoomooaPrefs.Key.tintStrength) private var tintStrength = AoomooaPrefs.Default.tintStrength
     @AppStorage(AoomooaPrefs.Key.animationSpeed) private var animationSpeed = AoomooaPrefs.Default.animationSpeed
@@ -18,24 +19,33 @@ struct AoomooaSettingsView: View {
     @AppStorage(AoomooaPrefs.Key.weatherCity) private var weatherCity = AoomooaPrefs.Default.weatherCity
 
     @ObservedObject private var sites = FavouriteSitesModel.shared
+    @ObservedObject private var aiSites = FavouriteSitesModel.ai
     @ObservedObject private var weather = WeatherModel.shared
-    @State private var newSiteTitle = ""
-    @State private var newSiteAddress = ""
-    @State private var addFailed = false
+    @ObservedObject private var coordinator = BoringViewCoordinator.shared
 
     @State private var accessibilityGranted: Bool?
     @State private var cleanupMessage: String?
     @State private var cleaning = false
     @State private var confirmReset = false
 
-    /// “名称”输入框的宽度
-    private static let siteTitleWidth: CGFloat = 140
-
     var body: some View {
         Form {
             gestureSection
             appearanceSection
-            sitesSection
+            SiteListSettingsSection(
+                title: "常用网站",
+                placeholder: "网址，比如 aoomooa.art",
+                resetLabel: "恢复默认网站",
+                footer: "图标会按顺序找：网页里声明的 apple-touch-icon / icon → 网站根目录的 apple-touch-icon.png → Google / DuckDuckGo 图标服务。缓存超过一天会自动重新检查；网站刚换 logo 可以点 ↻ 立即更新。在刘海首页右键网站也能更换图标。",
+                model: sites
+            )
+            SiteListSettingsSection(
+                title: "AI 入口",
+                placeholder: "网址，比如 chat.deepseek.com",
+                resetLabel: "恢复默认 AI",
+                footer: "显示在首页右侧独立 AI 模块，与常用网站分开排列。",
+                model: aiSites
+            )
             timerSection
             weatherSection
             diagnosticsSection
@@ -53,6 +63,9 @@ struct AoomooaSettingsView: View {
             Slider(value: $hoverDelay, in: AoomooaPrefs.Limits.hoverDelay, step: 0.1) {
                 valueRow("悬停多久后展开", String(format: "%.1f 秒", hoverDelay))
             }
+            Slider(value: $collapseDelay, in: AoomooaPrefs.Limits.collapseDelay, step: 0.5) {
+                valueRow("移开多久后收起", String(format: "%.1f 秒", collapseDelay))
+            }
             Slider(value: $swipeSensitivity, in: AoomooaPrefs.Limits.swipeSensitivity, step: 0.1) {
                 valueRow("左右滑切页灵敏度", "滑 \(Int(AoomooaPrefs.tabSwipeDistance)) pt 切页")
             } minimumValueLabel: {
@@ -60,6 +73,7 @@ struct AoomooaSettingsView: View {
             } maximumValueLabel: {
                 Text("灵敏")
             }
+            Toggle("展开时记住上次停留的页面", isOn: $coordinator.openLastTabByDefault)
         } header: {
             Text("手势")
         } footer: {
@@ -92,82 +106,6 @@ struct AoomooaSettingsView: View {
         }
     }
 
-    // MARK: 常用网站
-
-    private var sitesSection: some View {
-        Section {
-            ForEach(Array(sites.sites.enumerated()), id: \.element.id) { index, site in
-                HStack(spacing: DS.Space.s) {
-                    SiteIconView(site: site, size: DS.Size.appIconMin, revision: sites.iconRevision)
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(site.title)
-                        Text(site.url)
-                            .font(DS.Fonts.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        Text("图标：" + (site.iconPath != nil ? "自己选的图片" : SiteIconCache.shared.sourceDescription(host: site.host)))
-                            .font(DS.Fonts.caption)
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .textSelection(.enabled)
-                    }
-                    Spacer(minLength: DS.Space.s)
-                    Button { sites.move(site, by: -1) } label: { Image(systemName: "chevron.up") }
-                        .disabled(index == 0)
-                        .help("上移")
-                    Button { sites.move(site, by: 1) } label: { Image(systemName: "chevron.down") }
-                        .disabled(index == sites.sites.count - 1)
-                        .help("下移")
-                    Button { sites.refetchIcon(for: site) } label: { Image(systemName: "arrow.clockwise") }
-                        .disabled(site.iconPath != nil)
-                        .help("重新获取图标")
-                    Button { sites.remove(site) } label: { Image(systemName: "trash") }
-                        .help("删除")
-                }
-                .buttonStyle(.borderless)
-            }
-            HStack(spacing: DS.Space.s) {
-                TextField("名称", text: $newSiteTitle, prompt: Text("名称（可不填）"))
-                    .labelsHidden()
-                    .frame(maxWidth: Self.siteTitleWidth)
-                TextField("网址", text: $newSiteAddress, prompt: Text("网址，比如 aoomooa.art"))
-                    .labelsHidden()
-                    .onSubmit(addSite)
-                Button("添加", action: addSite)
-                    .disabled(newSiteAddress.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-            if addFailed {
-                Text("网址无效，或者已经在列表里了")
-                    .font(DS.Fonts.caption)
-                    .foregroundStyle(DS.Colors.warning)
-            }
-        } header: {
-            HStack {
-                Text("常用网站")
-                Spacer()
-                Button("重新获取所有图标") { sites.refreshIcons(force: true) }
-                    .buttonStyle(.borderless)
-                    .font(DS.Fonts.caption)
-                Button("恢复默认网站") { sites.resetToDefaults() }
-                    .buttonStyle(.borderless)
-                    .font(DS.Fonts.caption)
-            }
-        } footer: {
-            Text("图标会按顺序找：网页里声明的 apple-touch-icon / icon → 网站根目录的 apple-touch-icon.png → Google / DuckDuckGo 图标服务。缓存超过一天会自动重新检查；网站刚换 logo 可以点 ↻ 立即更新。在刘海首页右键网站也能更换图标。")
-                .font(DS.Fonts.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private func addSite() {
-        addFailed = !sites.add(title: newSiteTitle, address: newSiteAddress)
-        if !addFailed {
-            newSiteTitle = ""
-            newSiteAddress = ""
-        }
-    }
-
     // MARK: 计时器
 
     private var timerSection: some View {
@@ -179,7 +117,7 @@ struct AoomooaSettingsView: View {
         } header: {
             Text("计时器")
         } footer: {
-            Text("点顶栏的 ⏱ 或双指左右滑到计时器页，选 5 / 10 / 15 / 25 分钟，或用滚轮选 1–60 分钟；滚轮默认停在上面的时长。")
+            Text("点顶栏的 ⏱ 或双指左右滑到时间页（日历与天气 · 计时器），选 5 / 10 / 15 / 25 分钟，或用滚轮选 1–60 分钟；滚轮默认停在上面的时长。")
                 .font(DS.Fonts.caption)
                 .foregroundStyle(.secondary)
         }
@@ -298,12 +236,14 @@ struct AoomooaSettingsView: View {
 
     private func resetPrefs() {
         hoverDelay = AoomooaPrefs.Default.hoverDelay
+        collapseDelay = AoomooaPrefs.Default.collapseDelay
         swipeSensitivity = AoomooaPrefs.Default.swipeSensitivity
         tintStrength = AoomooaPrefs.Default.tintStrength
         animationSpeed = AoomooaPrefs.Default.animationSpeed
         timerMinutes = AoomooaPrefs.Default.timerMinutes
         timerShowWhenClosed = AoomooaPrefs.Default.timerShowWhenClosed
         weatherCity = AoomooaPrefs.Default.weatherCity
+        coordinator.openLastTabByDefault = true
     }
 
     private func valueRow(_ title: String, _ value: String) -> some View {
@@ -313,6 +253,95 @@ struct AoomooaSettingsView: View {
             Text(value)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// 常用网站 / AI 入口共用的设置列表区块
+private struct SiteListSettingsSection: View {
+    let title: String
+    let placeholder: String
+    let resetLabel: String
+    let footer: String
+    @ObservedObject var model: FavouriteSitesModel
+
+    @State private var newTitle = ""
+    @State private var newAddress = ""
+    @State private var addFailed = false
+
+    private static let siteTitleWidth: CGFloat = 140
+
+    var body: some View {
+        Section {
+            ForEach(Array(model.sites.enumerated()), id: \.element.id) { index, site in
+                HStack(spacing: DS.Space.s) {
+                    SiteIconView(site: site, size: DS.Size.appIconMin, revision: model.iconRevision)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(site.title)
+                        Text(site.url)
+                            .font(DS.Fonts.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Text("图标：" + (site.iconPath != nil ? "自己选的图片" : SiteIconCache.shared.sourceDescription(host: site.host)))
+                            .font(DS.Fonts.caption)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
+                    Spacer(minLength: DS.Space.s)
+                    Button { model.move(site, by: -1) } label: { Image(systemName: "chevron.up") }
+                        .disabled(index == 0)
+                        .help("上移")
+                    Button { model.move(site, by: 1) } label: { Image(systemName: "chevron.down") }
+                        .disabled(index == model.sites.count - 1)
+                        .help("下移")
+                    Button { model.refetchIcon(for: site) } label: { Image(systemName: "arrow.clockwise") }
+                        .disabled(site.iconPath != nil)
+                        .help("重新获取图标")
+                    Button { model.remove(site) } label: { Image(systemName: "trash") }
+                        .help("删除")
+                }
+                .buttonStyle(.borderless)
+            }
+            HStack(spacing: DS.Space.s) {
+                TextField("名称", text: $newTitle, prompt: Text("名称（可不填）"))
+                    .labelsHidden()
+                    .frame(maxWidth: Self.siteTitleWidth)
+                TextField("网址", text: $newAddress, prompt: Text(placeholder))
+                    .labelsHidden()
+                    .onSubmit(add)
+                Button("添加", action: add)
+                    .disabled(newAddress.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            if addFailed {
+                Text("网址无效，或者已经在列表里了")
+                    .font(DS.Fonts.caption)
+                    .foregroundStyle(DS.Colors.warning)
+            }
+        } header: {
+            HStack {
+                Text(title)
+                Spacer()
+                Button("重新获取所有图标") { model.refreshIcons(force: true) }
+                    .buttonStyle(.borderless)
+                    .font(DS.Fonts.caption)
+                Button(resetLabel) { model.resetToDefaults() }
+                    .buttonStyle(.borderless)
+                    .font(DS.Fonts.caption)
+            }
+        } footer: {
+            Text(footer)
+                .font(DS.Fonts.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func add() {
+        addFailed = !model.add(title: newTitle, address: newAddress)
+        if !addFailed {
+            newTitle = ""
+            newAddress = ""
         }
     }
 }

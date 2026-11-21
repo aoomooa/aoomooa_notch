@@ -157,6 +157,8 @@ enum DS {
         /// 启动器 / 常用网站图标（最大 / 最小）
         static let appIcon: CGFloat = 38
         static let appIconMin: CGFloat = 20
+        /// AI 独立横向卡片里的图标
+        static let aiIcon: CGFloat = 30
         /// 网站小图标放在白底上时占的比例
         static let faviconInset: CGFloat = 0.62
         /// 日历条：日期圆圈直径、整条高度

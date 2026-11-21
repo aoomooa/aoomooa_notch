@@ -174,23 +174,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupDragDetectors() {
+        // aoomooa: 托盘 / AirDrop 已移除，不再挂载全局拖放监听
         cleanupDragDetectors()
-
-        guard Defaults[.expandedDragDetection] else { return }
-
-        if Defaults[.showOnAllDisplays] {
-            for screen in NSScreen.screens {
-                setupDragDetectorForScreen(screen)
-            }
-        } else {
-            let preferredScreen: NSScreen? = window?.screen
-                ?? NSScreen.screen(withUUID: coordinator.selectedScreenUUID)
-                ?? NSScreen.main
-
-            if let screen = preferredScreen {
-                setupDragDetectorForScreen(screen)
-            }
-        }
     }
 
     private func setupDragDetectorForScreen(_ screen: NSScreen) {

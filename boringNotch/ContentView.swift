@@ -35,7 +35,6 @@ struct ContentView: View {
     @AppStorage(AoomooaPrefs.Key.tintStrength) private var tintStrength = AoomooaPrefs.Default.tintStrength  // aoomooa
     @AppStorage(AoomooaPrefs.Key.timerShowWhenClosed) private var timerShowWhenClosed = AoomooaPrefs.Default.timerShowWhenClosed  // aoomooa
     @ObservedObject private var notchTimer = NotchTimerModel.shared   // aoomooa
-    @State private var anyDropDebounceTask: Task<Void, Never>?
 
     @State private var gestureProgress: CGFloat = .zero
 
@@ -254,35 +253,8 @@ struct ContentView: View {
             anchor: .top
         )
         .animation(DS.Motion.panel, value: gestureProgress)
-        .background(dragDetector)
         .preferredColorScheme(.dark)
         .environmentObject(vm)
-        .onChange(of: vm.anyDropZoneTargeting) { _, isTargeted in
-            anyDropDebounceTask?.cancel()
-
-            if isTargeted {
-                if vm.notchState == .closed {
-                    coordinator.currentView = .shelf
-                    doOpen()
-                }
-                return
-            }
-
-            anyDropDebounceTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(500))
-                guard !Task.isCancelled else { return }
-
-                if vm.dropEvent {
-                    vm.dropEvent = false
-                    return
-                }
-
-                vm.dropEvent = false
-                if !SharingStateManager.shared.preventNotchClose {
-                    vm.close()
-                }
-            }
-        }
     }
 
     @ViewBuilder
@@ -393,20 +365,14 @@ struct ContentView: View {
             if vm.notchState == .open {
                 ZStack(alignment: .top) {   // aoomooa: pages overlap while switching
                     switch coordinator.currentView {
-                    case .home:
-                        AoomooaIdleHomeView()   // aoomooa: now playing · sites · system status
+                    case .home, .shelf:
+                        AoomooaIdleHomeView()   // aoomooa 页面 1：播放 · 常用网站 · AI
                             .transition(pageTransition)
-                    case .shelf:
-                        NotchTrayView()   // aoomooa: AirDrop · tray · copy · remove
-                            .transition(pageTransition)
-                    case .reminders:
-                        NotchWorkspaceView()   // aoomooa: reminders | apps
-                            .transition(pageTransition)
-                    case .apps:
-                        NotchLauncherView()
+                    case .apps, .reminders:
+                        NotchWorkspaceView()    // aoomooa 页面 2：系统状态 · 工具启动器
                             .transition(pageTransition)
                     case .timer:
-                        NotchTimerView()   // aoomooa: ⏱ 计时器
+                        NotchTimerView()        // aoomooa 页面 3：日历与天气 · 紧凑计时器
                             .transition(pageTransition)
                     }
                 }
@@ -424,7 +390,6 @@ struct ContentView: View {
                 .opacity(gestureProgress != 0 ? 1.0 - min(abs(gestureProgress) * 0.1, 0.3) : 1.0)
             }
         }
-        .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], delegate: GeneralDropTargetDelegate(isTargeted: $vm.generalDropTargeting))
     }
 
     @ViewBuilder
@@ -549,22 +514,6 @@ struct ContentView: View {
         )
     }
 
-    @ViewBuilder
-    var dragDetector: some View {
-        if Defaults[.boringShelf] && vm.notchState == .closed {
-            Color.clear
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-        .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], isTargeted: $vm.dragDetectorTargeting) { providers in
-            vm.dropEvent = true
-            ShelfStateViewModel.shared.load(providers)
-            return true
-        }
-        } else {
-            EmptyView()
-        }
-    }
-
     private func doOpen() {
         withAnimation(AoomooaHover.expandAnimation) {
             vm.open()
@@ -614,8 +563,13 @@ struct ContentView: View {
             }
         } else {
             collapseTask?.cancel()
+            // aoomooa: 展开态移开鼠标后停留 collapseDelay（默认 3 秒）再收起；
+            // 收起态仅等 80ms 取消流光，避免擦过刘海后延迟误展开。
+            let delay: Duration = vm.notchState == .open
+                ? .seconds(max(Double(AoomooaHover.exitGraceMs) / 1000.0, AoomooaHover.collapseDelay))
+                : .milliseconds(AoomooaHover.exitGraceMs)
             collapseTask = Task {
-                try? await Task.sleep(for: .milliseconds(AoomooaHover.exitGraceMs))
+                try? await Task.sleep(for: delay)
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     self.collapseTask = nil
@@ -747,8 +701,10 @@ struct ContentView: View {
             }
             return
         }
+        // aoomooa: 时间页（日历列表 + 计时器滚轮）本身需要上下滑动，屏蔽上滑收起手势避免误触
         guard vm.notchState == .open && !vm.isHoveringCalendar,
-              !AoomooaGestureGate.verticalScrollerHovered else { return }   // aoomooa: 滚轮上滑不收起
+              coordinator.currentView != .timer,
+              !AoomooaGestureGate.verticalScrollerHovered else { return }
 
         withAnimation(animationSpring) {
             gestureProgress = (translation / Defaults[.gestureSensitivity]) * -20

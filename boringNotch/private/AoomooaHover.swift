@@ -10,7 +10,9 @@ import SwiftUI
 enum AoomooaHover {
     /// 悬停多久后从第一阶段展开（设置里 0.2–1.0 秒）
     static var stage1Delay: TimeInterval { AoomooaPrefs.hoverDelay }
-    /// 确认鼠标真的离开后才收起（过滤布局抖动）
+    /// 展开后鼠标移开多久再自动收起（设置里 0.0–5.0 秒，默认 3 秒）
+    static var collapseDelay: TimeInterval { AoomooaPrefs.collapseDelay }
+    /// 收起态悬停离开时过滤布局抖动（毫秒）
     static let exitGraceMs: Int = 80
     /// 双指上/下滑隐藏/恢复音乐实时活动需要的距离
     static let swipeDistance: CGFloat = 60

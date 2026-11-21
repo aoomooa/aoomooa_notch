@@ -245,7 +245,7 @@ struct NotchRemindersView: View {
     }
 
     private var listView: some View {
-        VStack(alignment: .leading, spacing: DS.Space.s) {
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
             calendarHeader
 
             if model.items.isEmpty && model.dayEvents.isEmpty {
@@ -310,14 +310,23 @@ struct NotchRemindersView: View {
         return Calendar.current.isDateInToday(model.selectedDay) ? "今天没有任何事项" : "这天没有安排"
     }
 
-    // MARK: 日历：月份 + 按周分页的日期条（原生滚动，没有自定义弹簧）
+    // MARK: 日历：顶部「月份 + 紧凑天气」+ 全宽按周分页日期条
 
     private var calendarHeader: some View {
-        HStack(alignment: .center, spacing: DS.Space.s) {
-            Text(formatter("M月").string(from: model.selectedDay))
-                .font(DS.Fonts.title)
-                .foregroundStyle(DS.Colors.textPrimary)
-                .fixedSize()
+        VStack(alignment: .leading, spacing: DS.Space.xs) {
+            HStack(alignment: .center, spacing: DS.Space.s) {
+                HStack(spacing: DS.Space.xs) {
+                    Image(systemName: "calendar")
+                        .font(DS.Fonts.caption(.semibold))
+                        .foregroundStyle(DS.Colors.textSecondary)
+                    Text(formatter("M月").string(from: model.selectedDay))
+                        .font(DS.Fonts.body(.semibold))
+                        .foregroundStyle(DS.Colors.textPrimary)
+                        .fixedSize()
+                }
+                Spacer(minLength: DS.Space.xs)
+                AoomooaWeatherCompactBadge()
+            }
             dayStrip
         }
     }

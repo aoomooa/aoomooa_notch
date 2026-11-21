@@ -11,6 +11,7 @@ import SwiftUI
 enum AoomooaPrefs {
     enum Key {
         static let hoverDelay = "aoomooa.hoverDelay"
+        static let collapseDelay = "aoomooa.collapseDelay"
         static let swipeSensitivity = "aoomooa.swipeSensitivity"
         static let tintStrength = "aoomooa.tintStrength"
         static let animationSpeed = "aoomooa.animationSpeed"
@@ -22,6 +23,8 @@ enum AoomooaPrefs {
     enum Default {
         /// 悬停多久后展开（秒）
         static let hoverDelay: Double = 0.8
+        /// 展开后鼠标移开多久再收起（秒）
+        static let collapseDelay: Double = 3.0
         /// 左右滑灵敏度 0…1（0.5 ≈ 原来的 120pt）
         static let swipeSensitivity: Double = 0.5
         /// 封面取色强度 0…1
@@ -38,6 +41,7 @@ enum AoomooaPrefs {
 
     enum Limits {
         static let hoverDelay: ClosedRange<Double> = 0.2...1.0
+        static let collapseDelay: ClosedRange<Double> = 0.0...5.0
         static let swipeSensitivity: ClosedRange<Double> = 0...1
         static let tintStrength: ClosedRange<Double> = 0...1
         static let animationSpeed: ClosedRange<Double> = 0.5...2.0
@@ -49,6 +53,7 @@ enum AoomooaPrefs {
     // MARK: 读取（随时现读）
 
     static var hoverDelay: Double { clamp(double(Key.hoverDelay, Default.hoverDelay), Limits.hoverDelay) }
+    static var collapseDelay: Double { clamp(double(Key.collapseDelay, Default.collapseDelay), Limits.collapseDelay) }
     static var swipeSensitivity: Double { clamp(double(Key.swipeSensitivity, Default.swipeSensitivity), Limits.swipeSensitivity) }
     static var tintStrength: Double { clamp(double(Key.tintStrength, Default.tintStrength), Limits.tintStrength) }
     static var animationSpeed: Double { clamp(double(Key.animationSpeed, Default.animationSpeed), Limits.animationSpeed) }
@@ -74,7 +79,7 @@ enum AoomooaPrefs {
     /// 恢复默认：清掉 aoomooa 页的所有设置
     static func resetAll() {
         let d = UserDefaults.standard
-        for key in [Key.hoverDelay, Key.swipeSensitivity, Key.tintStrength,
+        for key in [Key.hoverDelay, Key.collapseDelay, Key.swipeSensitivity, Key.tintStrength,
                     Key.animationSpeed, Key.timerMinutes, Key.timerShowWhenClosed, Key.weatherCity] {
             d.removeObject(forKey: key)
         }

@@ -188,8 +188,15 @@ final class SiteIconCache: @unchecked Sendable {
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         guard let result = try? await URLSession.shared.data(for: request),
               let http = result.1 as? HTTPURLResponse, http.statusCode == 200 else { return [] }
-        let html = String(decoding: result.0.prefix(Self.htmlLimit), as: UTF8.self)
         let base = http.url ?? page
+        // 如果被重定向到别的登录域名（如 drive.google.com → accounts.google.com），
+        // 不要抓取登录页的通用图标，直接交给后面的域名图标服务处理
+        let normalizeHost: (String?) -> String = { h in
+            let lower = (h ?? "").lowercased()
+            return lower.hasPrefix("www.") ? String(lower.dropFirst(4)) : lower
+        }
+        if normalizeHost(base.host) != normalizeHost(page.host) { return [] }
+        let html = String(decoding: result.0.prefix(Self.htmlLimit), as: UTF8.self)
 
         guard let tagRegex = try? NSRegularExpression(pattern: "<link\\b[^>]*>", options: [.caseInsensitive]) else { return [] }
         var found: [Candidate] = []
