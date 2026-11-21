@@ -17,11 +17,17 @@ struct AoomooaSettingsView: View {
     @AppStorage(AoomooaPrefs.Key.timerMinutes) private var timerMinutes = AoomooaPrefs.Default.timerMinutes
     @AppStorage(AoomooaPrefs.Key.timerShowWhenClosed) private var timerShowWhenClosed = AoomooaPrefs.Default.timerShowWhenClosed
     @AppStorage(AoomooaPrefs.Key.weatherCity) private var weatherCity = AoomooaPrefs.Default.weatherCity
+    @AppStorage(AoomooaPrefs.Key.sentinelEnabled) private var sentinelEnabled = AoomooaPrefs.Default.sentinelEnabled
+    @AppStorage(AoomooaPrefs.Key.sentinelTimeoutAntigravity) private var timeoutAntigravity = AoomooaPrefs.Default.sentinelTimeoutAntigravity
+    @AppStorage(AoomooaPrefs.Key.sentinelTimeoutDeepSeek) private var timeoutDeepSeek = AoomooaPrefs.Default.sentinelTimeoutDeepSeek
+    @AppStorage(AoomooaPrefs.Key.sentinelTimeoutClaude) private var timeoutClaude = AoomooaPrefs.Default.sentinelTimeoutClaude
 
     @ObservedObject private var sites = FavouriteSitesModel.shared
     @ObservedObject private var aiSites = FavouriteSitesModel.ai
     @ObservedObject private var weather = WeatherModel.shared
     @ObservedObject private var coordinator = BoringViewCoordinator.shared
+    @ObservedObject private var sentinel = AoomooaSentinelModel.shared
+    @State private var copiedTokenPath = false
 
     @State private var accessibilityGranted: Bool?
     @State private var cleanupMessage: String?
@@ -48,6 +54,7 @@ struct AoomooaSettingsView: View {
             )
             timerSection
             weatherSection
+            sentinelSection
             diagnosticsSection
             resetSection
         }
@@ -151,6 +158,82 @@ struct AoomooaSettingsView: View {
         }
     }
 
+    // MARK: AI 哨兵
+
+    private var sentinelSection: some View {
+        Section {
+            Toggle("启用 AI 状态小灯", isOn: $sentinelEnabled)
+                .onChange(of: sentinelEnabled) { _, on in
+                    sentinel.setEnabled(on)
+                }
+
+            LabeledContent("监听状态") {
+                if !sentinelEnabled {
+                    Text("已关闭").foregroundStyle(.secondary)
+                } else if sentinel.isListening {
+                    Text("127.0.0.1:\(AoomooaPrefs.sentinelPort) · 运行中")
+                        .monospacedDigit()
+                        .foregroundStyle(DS.Colors.success)
+                } else if let err = sentinel.listenError {
+                    Text("失败：\(err)")
+                        .foregroundStyle(DS.Colors.warning)
+                        .lineLimit(1)
+                } else {
+                    Text("启动中…").foregroundStyle(.secondary)
+                }
+            }
+
+            Stepper(value: $timeoutAntigravity, in: AoomooaPrefs.Limits.sentinelTimeout) {
+                valueRow("Antigravity「很久没消息」超时", "\(timeoutAntigravity) 分钟")
+            }
+            .onChange(of: timeoutAntigravity) { _, _ in sentinel.rescheduleTimers() }
+
+            Stepper(value: $timeoutDeepSeek, in: AoomooaPrefs.Limits.sentinelTimeout) {
+                valueRow("DeepSeek「很久没消息」超时", "\(timeoutDeepSeek) 分钟")
+            }
+            .onChange(of: timeoutDeepSeek) { _, _ in sentinel.rescheduleTimers() }
+
+            Stepper(value: $timeoutClaude, in: AoomooaPrefs.Limits.sentinelTimeout) {
+                valueRow("Claude「很久没消息」超时", "\(timeoutClaude) 分钟")
+            }
+            .onChange(of: timeoutClaude) { _, _ in sentinel.rescheduleTimers() }
+
+            LabeledContent("口令文件（0600）") {
+                HStack(spacing: DS.Space.s) {
+                    Text(sentinel.tokenFilePath)
+                        .font(DS.Fonts.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                    Button(copiedTokenPath ? "已复制" : "复制路径") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(sentinel.tokenFilePath, forType: .string)
+                        copiedTokenPath = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(1.5))
+                            copiedTokenPath = false
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: DS.Space.s) {
+                Button("试灯：工作中") { sentinel.simulate(source: .antigravity, state: .working) }
+                Button("试灯：需确认") { sentinel.simulate(source: .deepseek, state: .attention) }
+                Button("试灯：已完成") { sentinel.simulate(source: .claude, state: .done) }
+                Button("熄灭") { sentinel.clearAll() }
+            }
+            .disabled(!sentinelEnabled)
+        } header: {
+            Text("AI 哨兵")
+        } footer: {
+            Text("仅监听本机回环 127.0.0.1，强制校验 X-Notch-Token 并拒绝带 Origin 的浏览器请求；空闲 0% CPU，不写日志、不存对话内容。接入脚本见仓库 scripts/sentinel/。")
+                .font(DS.Fonts.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     // MARK: 诊断
 
     private var diagnosticsSection: some View {
@@ -243,6 +326,11 @@ struct AoomooaSettingsView: View {
         timerMinutes = AoomooaPrefs.Default.timerMinutes
         timerShowWhenClosed = AoomooaPrefs.Default.timerShowWhenClosed
         weatherCity = AoomooaPrefs.Default.weatherCity
+        sentinelEnabled = AoomooaPrefs.Default.sentinelEnabled
+        timeoutAntigravity = AoomooaPrefs.Default.sentinelTimeoutAntigravity
+        timeoutDeepSeek = AoomooaPrefs.Default.sentinelTimeoutDeepSeek
+        timeoutClaude = AoomooaPrefs.Default.sentinelTimeoutClaude
+        sentinel.setEnabled(sentinelEnabled)
         coordinator.openLastTabByDefault = true
     }
 

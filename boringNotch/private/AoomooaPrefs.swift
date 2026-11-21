@@ -18,6 +18,11 @@ enum AoomooaPrefs {
         static let timerMinutes = "aoomooa.timerDefaultMinutes"
         static let timerShowWhenClosed = "aoomooa.timerShowWhenClosed"
         static let weatherCity = "aoomooa.weatherCity"
+        static let sentinelEnabled = "aoomooa.sentinelEnabled"
+        static let sentinelPort = "aoomooa.sentinelPort"
+        static let sentinelTimeoutAntigravity = "aoomooa.sentinelTimeout.antigravity"
+        static let sentinelTimeoutDeepSeek = "aoomooa.sentinelTimeout.deepseek"
+        static let sentinelTimeoutClaude = "aoomooa.sentinelTimeout.claude"
     }
 
     enum Default {
@@ -37,6 +42,13 @@ enum AoomooaPrefs {
         static let timerShowWhenClosed: Bool = true
         /// 天气城市，空 = 按网络位置自动判断
         static let weatherCity: String = ""
+        /// AI 状态哨兵总开关与本机回环端口
+        static let sentinelEnabled: Bool = true
+        static let sentinelPort: Int = 17425
+        /// 按来源独立的“很久没消息”超时（分钟）
+        static let sentinelTimeoutAntigravity: Int = 5
+        static let sentinelTimeoutDeepSeek: Int = 5
+        static let sentinelTimeoutClaude: Int = 20
     }
 
     enum Limits {
@@ -46,6 +58,7 @@ enum AoomooaPrefs {
         static let tintStrength: ClosedRange<Double> = 0...1
         static let animationSpeed: ClosedRange<Double> = 0.5...2.0
         static let timerMinutes: ClosedRange<Int> = 1...60
+        static let sentinelTimeout: ClosedRange<Int> = 2...60
         /// 灵敏度 0 → 需要滑 180pt，灵敏度 1 → 60pt
         static let swipeDistance: ClosedRange<Double> = 60...180
     }
@@ -70,6 +83,20 @@ enum AoomooaPrefs {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    static var sentinelEnabled: Bool {
+        (UserDefaults.standard.object(forKey: Key.sentinelEnabled) as? Bool) ?? Default.sentinelEnabled
+    }
+
+    static var sentinelPort: UInt16 {
+        let p = (UserDefaults.standard.object(forKey: Key.sentinelPort) as? Int) ?? Default.sentinelPort
+        return UInt16(min(max(p, 1024), 65535))
+    }
+
+    static func sentinelTimeoutMinutes(key: String, fallback: Int) -> Int {
+        let v = (UserDefaults.standard.object(forKey: key) as? Int) ?? fallback
+        return min(max(v, Limits.sentinelTimeout.lowerBound), Limits.sentinelTimeout.upperBound)
+    }
+
     /// 左右滑切页需要滑过的距离（pt）
     static var tabSwipeDistance: CGFloat {
         let r = Limits.swipeDistance
@@ -80,7 +107,9 @@ enum AoomooaPrefs {
     static func resetAll() {
         let d = UserDefaults.standard
         for key in [Key.hoverDelay, Key.collapseDelay, Key.swipeSensitivity, Key.tintStrength,
-                    Key.animationSpeed, Key.timerMinutes, Key.timerShowWhenClosed, Key.weatherCity] {
+                    Key.animationSpeed, Key.timerMinutes, Key.timerShowWhenClosed, Key.weatherCity,
+                    Key.sentinelEnabled, Key.sentinelPort, Key.sentinelTimeoutAntigravity,
+                    Key.sentinelTimeoutDeepSeek, Key.sentinelTimeoutClaude] {
             d.removeObject(forKey: key)
         }
     }

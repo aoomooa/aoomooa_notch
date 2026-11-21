@@ -58,6 +58,8 @@ struct BoringHeader: View {
                             }
                             .buttonStyle(PlainButtonStyle())
                         }
+                        // aoomooa: AI 状态哨兵（仅在有活跃 AI 任务时显示，平时 0 占位）
+                        AoomooaSentinelHeaderButton()
                         // aoomooa: ⏱ 时间页按钮（日历+天气 · 计时器；计时中显示强调色）
                         Button(action: {
                             withAnimation(DS.Motion.page) {

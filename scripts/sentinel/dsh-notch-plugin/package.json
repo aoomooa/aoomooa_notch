@@ -1,0 +1,11 @@
+{
+  "name": "dsh-plugin-aoomooa-notch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Report DeepSeek Harness session lifecycle events to AooMooa Notch status light (0% idle CPU, loopback-only).",
+  "main": "./index.mjs",
+  "exports": {
+    ".": "./index.mjs"
+  }
+}

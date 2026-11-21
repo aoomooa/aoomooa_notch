@@ -182,6 +182,10 @@ enum DS {
         /// 计时器：圆环直径、收起时左右两侧的宽度
         static let timerRing: CGFloat = 72
         static let timerSide: CGFloat = 44
+        /// AI 哨兵：收起时左右两侧宽度、主灯 / 副灯直径
+        static let sentinelSide: CGFloat = 34
+        static let sentinelLight: CGFloat = 8
+        static let sentinelDotSmall: CGFloat = 6
         /// 分钟滚轮：每行高度、所在卡片的宽度
         static let wheelRow: CGFloat = 22
         static let wheelTile: CGFloat = 100

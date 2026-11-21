@@ -35,6 +35,7 @@ struct ContentView: View {
     @AppStorage(AoomooaPrefs.Key.tintStrength) private var tintStrength = AoomooaPrefs.Default.tintStrength  // aoomooa
     @AppStorage(AoomooaPrefs.Key.timerShowWhenClosed) private var timerShowWhenClosed = AoomooaPrefs.Default.timerShowWhenClosed  // aoomooa
     @ObservedObject private var notchTimer = NotchTimerModel.shared   // aoomooa
+    @ObservedObject private var sentinel = AoomooaSentinelModel.shared   // aoomooa: AI 哨兵
 
     @State private var gestureProgress: CGFloat = .zero
 
@@ -67,6 +68,10 @@ struct ContentView: View {
         )
     }
 
+    private var isMusicLiveActive: Bool {
+        (musicManager.isPlaying || !musicManager.isPlayerIdle) && coordinator.musicLiveActivityEnabled
+    }
+
     private var computedChinWidth: CGFloat {
         var chinWidth: CGFloat = vm.closedNotchSize.width
 
@@ -74,9 +79,16 @@ struct ContentView: View {
             && vm.notchState == .closed && Defaults[.showPowerStatusNotifications]
         {
             chinWidth = 640
+        } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
+            && notchTimer.showsOnClosedNotch(showWhileRunning: timerShowWhenClosed)
+        {
+            chinWidth += (2 * DS.Size.timerSide)
+        } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
+            && sentinel.showsOnClosedNotch && (sentinel.isUrgent || !isMusicLiveActive)
+        {
+            chinWidth += (2 * DS.Size.sentinelSide)
         } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music)
-            && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle)
-            && coordinator.musicLiveActivityEnabled && !vm.hideOnClosed
+            && vm.notchState == .closed && isMusicLiveActive && !vm.hideOnClosed
         {
             chinWidth += (2 * max(0, vm.effectiveClosedNotchHeight - 12) + 20)
         } else if !coordinator.expandingView.show && vm.notchState == .closed
@@ -210,17 +222,22 @@ struct ContentView: View {
                         }
                     }
                     .onChange(of: vm.isBatteryPopoverActive) {
-                        if !vm.isBatteryPopoverActive && !isHovering && vm.notchState == .open && !SharingStateManager.shared.preventNotchClose {
+                        if !vm.isBatteryPopoverActive && !sentinel.isPopoverActive && !isHovering && vm.notchState == .open && !SharingStateManager.shared.preventNotchClose {
                             hoverTask?.cancel()
                             hoverTask = Task {
                                 try? await Task.sleep(for: .milliseconds(100))
                                 guard !Task.isCancelled else { return }
                                 await MainActor.run {
-                                    if !self.vm.isBatteryPopoverActive && !self.isHovering && self.vm.notchState == .open && !SharingStateManager.shared.preventNotchClose {
+                                    if !self.vm.isBatteryPopoverActive && !self.sentinel.isPopoverActive && !self.isHovering && self.vm.notchState == .open && !SharingStateManager.shared.preventNotchClose {
                                         self.vm.close()
                                     }
                                 }
                             }
+                        }
+                    }
+                    .onChange(of: sentinel.isPopoverActive) {
+                        if !sentinel.isPopoverActive && !vm.isBatteryPopoverActive && !isHovering && vm.notchState == .open && !SharingStateManager.shared.preventNotchClose {
+                            handleHover(false)
                         }
                     }
                     .sensoryFeedback(.alignment, trigger: haptics)
@@ -304,12 +321,27 @@ struct ContentView: View {
                               .transition(.opacity)
                       } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
                                     && notchTimer.showsOnClosedNotch(showWhileRunning: timerShowWhenClosed) {
-                          // aoomooa: 计时器 — 左边 ⏱，右边 mm:ss（时间到时显示“时间到”）
-                          AoomooaTimerLiveActivity(height: vm.effectiveClosedNotchHeight,
-                                                   middleWidth: vm.closedNotchSize.width - cornerRadiusInsets.closed.top)
-                      } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music) && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle) && coordinator.musicLiveActivityEnabled && !vm.hideOnClosed {
-                          MusicLiveActivity()
-                              .frame(alignment: .center)
+                          // aoomooa: 计时器 — 左边 ⏱，右边 mm:ss（若同时有 AI 活跃则右侧边缘轻叠小灯）
+                          HStack(spacing: DS.Space.xs) {
+                              AoomooaTimerLiveActivity(height: vm.effectiveClosedNotchHeight,
+                                                       middleWidth: vm.closedNotchSize.width - cornerRadiusInsets.closed.top)
+                              if sentinel.showsOnClosedNotch {
+                                  AoomooaSentinelEdgeDot()
+                              }
+                          }
+                      } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
+                                    && sentinel.showsOnClosedNotch && (sentinel.isUrgent || !isMusicLiveActive) {
+                          // aoomooa: AI 哨兵 — 左边 AI 原生 Logo，右边状态小灯
+                          AoomooaSentinelLiveActivity(height: vm.effectiveClosedNotchHeight,
+                                                      middleWidth: vm.closedNotchSize.width - cornerRadiusInsets.closed.top)
+                      } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music) && vm.notchState == .closed && isMusicLiveActive && !vm.hideOnClosed {
+                          HStack(spacing: DS.Space.xs) {
+                              MusicLiveActivity()
+                                  .frame(alignment: .center)
+                              if sentinel.showsOnClosedNotch {
+                                  AoomooaSentinelEdgeDot()
+                              }
+                          }
                       } else if !coordinator.expandingView.show && vm.notchState == .closed && (!musicManager.isPlaying && musicManager.isPlayerIdle) && Defaults[.showNotHumanFace] && !vm.hideOnClosed  {
                           BoringFaceAnimation()
                        } else if vm.notchState == .open {
@@ -584,6 +616,7 @@ struct ContentView: View {
                     }
                     if self.vm.notchState == .open
                         && !self.vm.isBatteryPopoverActive
+                        && !self.sentinel.isPopoverActive
                         && !SharingStateManager.shared.preventNotchClose {
                         withAnimation(AoomooaHover.collapseAnimation) { self.vm.close() }
                     }
