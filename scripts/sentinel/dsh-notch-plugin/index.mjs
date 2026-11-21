@@ -96,7 +96,13 @@ export function apply(ctx, config = {}) {
         void report("attention", "需要确认");
         break;
       case "turn/end": {
-        const reason = String(event?.data?.reason || "").trim().toLowerCase();
+        // DeepSeek Harness v4 中 event.data.reason 是对象 { kind: "completed" | "aborted" | "blocked" | "error" | ... }
+        const rawReason = event?.data?.reason;
+        const reason = String(
+          rawReason && typeof rawReason === "object" ? rawReason.kind : rawReason ?? ""
+        )
+          .trim()
+          .toLowerCase();
         if (reason === "completed") {
           void report("done", "已完成");
         } else if (
@@ -106,6 +112,8 @@ export function apply(ctx, config = {}) {
           reason === "interrupted"
         ) {
           void report("idle");
+        } else if (reason === "blocked") {
+          void report("attention", "会话已归档/拦截");
         } else {
           void report("attention", "已出错");
         }

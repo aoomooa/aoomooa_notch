@@ -30,7 +30,8 @@ TOOL_SPEC = {
     "name": "set_notch_status",
     "description": (
         "Update the macOS AooMooa Notch status light for Claude. "
-        "Call ONLY during multi-step or long-running tasks (do NOT call for quick Q&A): "
+        "Call during multi-step or long-running tasks, or whenever the user asks to test the notch light "
+        "(skip for quick casual one-line Q&A): "
         "state='working' at task start, state='attention' when waiting for user approval/decision, "
         "state='done' right before delivering the final answer, or state='idle' to clear."
     ),
