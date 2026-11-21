@@ -50,6 +50,15 @@ xattr -dr com.apple.quarantine "/Applications/aoomooa🉐刘海屏.app"
 
 然后正常打开。启动后把鼠标移到屏幕顶部中间，刘海就会展开；右键刘海可随时打开设置或退出应用。
 
+- **主体功能（三页刘海）**：开箱即用，无需额外配置。
+- **AI 任务哨兵（可选）**：三款工具插件已内置在 App 内，无需 clone 仓库，终端执行一行命令即可自动识别本机已安装的 Antigravity / Claude / DeepSeek Harness 并完成接入（也可在 **设置 → 模块 → AI 哨兵 → 试灯与接入配置** 一键复制）：
+
+```bash
+bash "/Applications/aoomooa🉐刘海屏.app/Contents/Resources/sentinel/install.sh"
+```
+
+完整说明与卸载方式见 [AI 任务哨兵接入指南](scripts/sentinel/README.md)。
+
 > 这是未签名构建。请只从本仓库的 Releases 或源码构建，不要从第三方转载站下载。
 
 ## 从源码构建与打包

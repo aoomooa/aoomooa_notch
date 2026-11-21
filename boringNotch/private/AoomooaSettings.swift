@@ -175,7 +175,18 @@ struct AoomooaModulesSettingsView: View {
     @ObservedObject private var weather = WeatherModel.shared
     @ObservedObject private var sentinel = AoomooaSentinelModel.shared
     @State private var copiedTokenPath = false
+    @State private var copiedInstallCmd = false
+    @State private var copiedClaudePrompt = false
     @State private var showSentinelTools = false
+
+    private var sentinelInstallCommand: String {
+        let scriptPath = Bundle.main.resourceURL?
+            .appendingPathComponent("sentinel/install.sh").path
+            ?? "\(AoomooaDiagnostics.fixedInstallPath)/Contents/Resources/sentinel/install.sh"
+        return "bash \"\(scriptPath)\""
+    }
+
+    private static let claudeCustomInstruction = "仅在多步骤或较耗时的长任务中调用 set_notch_status 工具：开始长任务时传 working，停下来需要我确认/决策前传 attention，给出最终答复前传 done。普通的简短问答不要调用此工具。"
 
     var body: some View {
         Form {
@@ -222,7 +233,7 @@ struct AoomooaModulesSettingsView: View {
                 sentinelToolRow(source: .deepseek, timeout: $timeoutDeepSeek)
                     .onChange(of: timeoutDeepSeek) { _, _ in sentinel.rescheduleTimers() }
 
-                DisclosureGroup("试灯与连接信息", isExpanded: $showSentinelTools) {
+                DisclosureGroup("试灯与接入配置", isExpanded: $showSentinelTools) {
                     VStack(alignment: .leading, spacing: DS.Space.s) {
                         HStack(spacing: DS.Space.s) {
                             sentinelTestButton("工作中", dot: sentinelDotColor(.working)) {
@@ -247,6 +258,40 @@ struct AoomooaModulesSettingsView: View {
                             sentinelTestButton("全部熄灭") {
                                 sentinel.clearAll()
                             }
+                        }
+                    }
+
+                    LabeledContent("内置插件接入") {
+                        HStack(spacing: DS.Space.s) {
+                            Button(copiedInstallCmd ? "已复制命令" : "复制一键安装命令") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(sentinelInstallCommand, forType: .string)
+                                copiedInstallCmd = true
+                                Task {
+                                    try? await Task.sleep(for: .seconds(1.5))
+                                    copiedInstallCmd = false
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .tint(.secondary)
+                            .foregroundStyle(.primary)
+                            .help("在终端粘贴回车，自动为已安装的 Antigravity / Claude / DeepSeek 接入内置插件")
+
+                            Button(copiedClaudePrompt ? "已复制提示词" : "复制 Claude 提示词") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(Self.claudeCustomInstruction, forType: .string)
+                                copiedClaudePrompt = true
+                                Task {
+                                    try? await Task.sleep(for: .seconds(1.5))
+                                    copiedClaudePrompt = false
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .tint(.secondary)
+                            .foregroundStyle(.primary)
+                            .help("粘贴到 Claude 设置 → 个人偏好（Custom Instructions）")
                         }
                     }
 
@@ -284,7 +329,7 @@ struct AoomooaModulesSettingsView: View {
         } header: {
             Text("AI 哨兵")
         } footer: {
-            Text("左耳 Logo 与右耳小灯按上表顺序一一对应；超时未收到更新时亮橙灯，仅监听本机回环，空闲 0% CPU。")
+            Text("AI 状态灯需为对应工具接入内置插件（展开上方“试灯与接入配置”复制安装命令，终端回车即可）；仅监听本机回环，空闲 0% CPU。")
                 .font(DS.Fonts.caption)
                 .foregroundStyle(.secondary)
         }
