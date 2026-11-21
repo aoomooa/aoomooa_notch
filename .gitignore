@@ -52,4 +52,7 @@ build/
 *.ipa
 *.xcarchive
 *.dSYM
+*.dmg
+*.zip
+dist/
 

@@ -14,7 +14,7 @@ PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 ## Upstream
 
-This project is a modified version of **Boring Notch**:
+This project is a modified version of **Boring Notch** (v2.7.3):
 
 - Upstream: https://github.com/TheBoredTeam/boring.notch
 - Upstream copyright: The Bored Team and Boring Notch contributors
@@ -24,9 +24,12 @@ The full upstream license text is retained in [LICENSE](LICENSE).
 
 ## Changes in this fork
 
-- Application display name changed to `aoomooa🉐刘海屏`
+- Application display name changed to `aoomooa🉐刘海屏`, independent version `1.1.0`
 - Bundle identifier changed to `com.aoomooa.notch`
-- New four-eyed-cat app icon and site artwork
+- New four-eyed-cat vector artwork and app icon (`docs/aoomooa-logo.svg`)
+- Minimalist 3-page layout (Home · Workspace · Calendar/Weather & Timer), removing Shelf/AirDrop
+- Event-driven loopback AI Task Sentinel (Antigravity · Claude · DeepSeek Harness) with symmetric media coexistence
+- Simplified 3-tab Chinese Settings UI and notch right-click quit menu
 - Personal site integration at https://aoomooa.art/notch
 
 No attempt is made to claim authorship of the upstream Boring Notch code.
