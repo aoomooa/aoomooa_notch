@@ -65,19 +65,14 @@ curl -s -X POST http://127.0.0.1:17425/status \
 - `turn/end` → 🟢 绿灯（已完成）/ 🔴 红灯（已出错）/ 熄灭
 - 超时未更新 → 🟠 橙灯（很久没消息）
 
-将该本地插件挂入你使用的 `dsh` profile（如 `desktop` 或 `web`）：
+将该本地插件通过官方命令挂入 `desktop` profile（已自带 `cordis.patch.yml`，安装即自动启用）：
 
 ```bash
 DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
-"$DSH" plugin --profile web add /Users/aoomooa/Desktop/5_Tech/4_Apps/aoomooa_notch/scripts/sentinel/dsh-notch-plugin
+"$DSH" plugin --profile desktop add /Users/aoomooa/Desktop/5_Tech/4_Apps/aoomooa_notch/scripts/sentinel/dsh-notch-plugin
 ```
 
-并在对应 profile 的 `cordis.patch.yml` 中启用：
-
-```yaml
-- id: aoomooa-notch-sentinel
-  name: dsh-plugin-aoomooa-notch
-```
+> 若使用 `web` profile，将命令中的 `desktop` 换为 `web` 即可。
 
 ---
 

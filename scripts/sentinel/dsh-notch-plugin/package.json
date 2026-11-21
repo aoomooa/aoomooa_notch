@@ -6,6 +6,14 @@
   "description": "Report DeepSeek Harness session lifecycle events to AooMooa Notch status light (0% idle CPU, loopback-only).",
   "main": "./index.mjs",
   "exports": {
-    ".": "./index.mjs"
+    ".": {
+      "default": "./index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
   }
 }
