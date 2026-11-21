@@ -10,6 +10,7 @@
 //
 
 import AppKit
+import Defaults
 import Network
 import Security
 import SwiftUI
@@ -694,39 +695,74 @@ private final class SentinelLoopbackServer: @unchecked Sendable {
     }
 }
 
-// MARK: - 收起态刘海视图：纯左右水平分布（左1↔右1 · 左2↔右2 · 左3↔右3）
+// MARK: - 收起态刘海视图：内侧 AI（左1↔右1 · 左2↔右2 · 左3↔右3）· 外侧媒体镜像共存
 
 struct AoomooaSentinelLiveActivity: View {
     @ObservedObject private var sentinel = AoomooaSentinelModel.shared
+    @ObservedObject private var musicManager = MusicManager.shared
     let height: CGFloat
     let middleWidth: CGFloat
+    var showsMedia: Bool = false
 
-    /// 根据同时活跃的 AI 数量自适应左右耳宽度（保持硬件刘海严格居中对称）
-    static func sideWidth(for count: Int) -> CGFloat {
+    /// 仅 AI 区域单侧宽度
+    static func aiClusterWidth(for count: Int, withMedia: Bool) -> CGFloat {
+        if withMedia {
+            switch count {
+            case ...1: return 24
+            case 2: return 40
+            default: return 56
+            }
+        }
         switch count {
         case ...1: return DS.Size.sentinelSide   // 34 pt
         case 2: return 48
-        default: return 66
+        default: return 64
         }
+    }
+
+    /// 根据活跃 AI 数量与是否媒体共存，计算严格对称的单侧耳宽（保证硬件刘海绝对居中）
+    static func sideWidth(for count: Int, withMedia: Bool = false) -> CGFloat {
+        let ai = aiClusterWidth(for: count, withMedia: withMedia)
+        return withMedia ? (ai + DS.Space.m + DS.Size.sentinelMediaWing) : ai
     }
 
     var body: some View {
         let records = Array(sentinel.orderedActiveRecords.prefix(3))
-        let earWidth = Self.sideWidth(for: records.count)
+        let aiWidth = Self.aiClusterWidth(for: records.count, withMedia: showsMedia)
+        let earWidth = Self.sideWidth(for: records.count, withMedia: showsMedia)
         let iconSize: CGFloat = {
             switch records.count {
-            case ...1: return max(16, min(20, height - 12))
-            case 2: return max(15, min(17, height - 14))
-            default: return max(14, min(16, height - 15))
+            case ...1: return max(16, min(showsMedia ? 18 : 20, height - 12))
+            case 2: return max(15, min(16, height - 14))
+            default: return max(14, min(15, height - 15))
             }
         }()
+        let artworkSize = max(16, min(18, height - 14))
+        let auraColor = AoomooaMediaAuraArtwork.resolvedAuraColor(from: musicManager.avgColor)
 
         HStack(spacing: 0) {
-            // 左侧：按顺序横排 1–3 个 AI 原生 Logo（左1 · 左2 · 左3）
-            HStack(spacing: DS.Space.xs) {
-                ForEach(records) { record in
-                    SentinelLogoView(source: record.source, size: iconSize)
+            // 左耳：[外侧媒体封面（可选）] + 12pt 呼吸留白 + [内侧 AI Logo 1..3]
+            HStack(spacing: 0) {
+                if showsMedia {
+                    AoomooaMediaAuraArtwork(
+                        image: musicManager.albumArt,
+                        auraColor: auraColor,
+                        size: artworkSize,
+                        isPlaying: musicManager.isPlaying
+                    )
+                    .frame(width: DS.Size.sentinelMediaWing, height: height)
+                    .transition(.opacity.combined(with: .scale(scale: 0.82)))
+
+                    Spacer(minLength: 0)
+                        .frame(width: DS.Space.m)
                 }
+
+                HStack(spacing: DS.Space.xs) {
+                    ForEach(records) { record in
+                        SentinelLogoView(source: record.source, size: iconSize)
+                    }
+                }
+                .frame(width: aiWidth, height: height)
             }
             .frame(width: earWidth, height: height)
 
@@ -735,12 +771,141 @@ struct AoomooaSentinelLiveActivity: View {
                 .fill(DS.Colors.background)
                 .frame(width: max(0, middleWidth), height: height)
 
-            // 右侧：按相同顺序横排 1–3 颗状态小灯（右1 · 右2 · 右3，与左侧一一对应）
-            SentinelLightsCluster(records: records)
-                .frame(width: earWidth, height: height)
+            // 右耳：[内侧 AI 小灯 1..3] + 12pt 镜像留白 + [外侧微降噪音频波形（可选）]
+            HStack(spacing: 0) {
+                SentinelLightsCluster(records: records)
+                    .frame(width: aiWidth, height: height)
+
+                if showsMedia {
+                    Spacer(minLength: 0)
+                        .frame(width: DS.Space.m)
+
+                    AoomooaMediaSpectrumWing(
+                        isPlaying: $musicManager.isPlaying,
+                        auraColor: auraColor,
+                        coexisting: true
+                    )
+                    .frame(width: DS.Size.sentinelMediaWing, height: height)
+                    .transition(.opacity.combined(with: .scale(scale: 0.82)))
+                }
+            }
+            .frame(width: earWidth, height: height)
         }
         .frame(height: height)
         .animation(DS.Motion.panel, value: records.count)
+        .animation(DS.Motion.panel, value: showsMedia)
+    }
+}
+
+/// 收起态媒体小封面：1（柔波扩散环）+ 2（银幕主色呼吸溢光），兼顾视频与音乐且不旋转
+struct AoomooaMediaAuraArtwork: View {
+    let image: NSImage
+    let auraColor: Color
+    let size: CGFloat
+    let isPlaying: Bool
+
+    @State private var glowBreathe = false
+    @State private var rippleExpand = false
+
+    static func resolvedAuraColor(from nsColor: NSColor) -> Color {
+        Defaults[.coloredSpectrogram]
+            ? Color(nsColor: nsColor).ensureMinimumBrightness(factor: 0.65)
+            : Color.white.opacity(0.75)
+    }
+
+    var body: some View {
+        ZStack {
+            // 效果 2：银幕呼吸溢光（柔和环境底光，随播放慢速呼吸）
+            AoomooaSquircle()
+                .fill(auraColor)
+                .frame(width: size, height: size)
+                .scaleEffect(isPlaying ? (glowBreathe ? 1.24 : 1.06) : 1.0)
+                .opacity(isPlaying ? (glowBreathe ? 0.48 : 0.22) : 0.10)
+                .blur(radius: 5)
+                .allowsHitTesting(false)
+
+            // 效果 1：柔波扩散环（从圆角边缘向外荡开一圈极淡波纹，传达“正在播放”）
+            if isPlaying {
+                AoomooaSquircle()
+                    .stroke(auraColor, lineWidth: 1.1)
+                    .frame(width: size, height: size)
+                    .scaleEffect(rippleExpand ? 1.40 : 0.98)
+                    .opacity(rippleExpand ? 0.0 : 0.50)
+                    .allowsHitTesting(false)
+            }
+
+            // 封面本体（保持端正清晰，加极细内高光防止暗画面融入黑底）
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fill)
+                .frame(width: size, height: size)
+                .clipShape(AoomooaSquircle())
+                .overlay(
+                    AoomooaSquircle()
+                        .stroke(Color.white.opacity(0.16), lineWidth: 0.5)
+                )
+        }
+        .id(isPlaying)
+        .onAppear { restartAnimations() }
+        .onChange(of: isPlaying) { _, _ in restartAnimations() }
+    }
+
+    private func restartAnimations() {
+        withTransaction(DS.Motion.instant) {
+            glowBreathe = false
+            rippleExpand = false
+        }
+        guard isPlaying else { return }
+        DispatchQueue.main.async {
+            guard isPlaying else { return }
+            withAnimation(.easeInOut(duration: 2.6).repeatForever(autoreverses: true)) {
+                glowBreathe = true
+            }
+            withAnimation(.easeOut(duration: 2.4).repeatForever(autoreverses: false)) {
+                rippleExpand = true
+            }
+        }
+    }
+}
+
+/// 右耳外侧媒体波形翼：与左耳封面共享同一主色微光实现镜像对称；与 AI 共存时适度降噪不抢灯
+struct AoomooaMediaSpectrumWing: View {
+    @Binding var isPlaying: Bool
+    let auraColor: Color
+    var coexisting: Bool = false
+
+    @Default(.useMusicVisualizer) private var useMusicVisualizer
+
+    var body: some View {
+        let barW: CGFloat = coexisting ? 14 : 16
+        let barH: CGFloat = coexisting ? 10 : 12
+
+        ZStack {
+            if isPlaying {
+                Capsule()
+                    .fill(auraColor)
+                    .frame(width: barW, height: barH)
+                    .opacity(coexisting ? 0.22 : 0.30)
+                    .blur(radius: 4)
+                    .allowsHitTesting(false)
+            }
+
+            if useMusicVisualizer {
+                Rectangle()
+                    .fill(auraColor.gradient)
+                    .frame(width: 24, height: 16)
+                    .mask {
+                        AudioSpectrumView(isPlaying: $isPlaying)
+                            .frame(width: barW, height: barH)
+                    }
+                    .opacity(coexisting ? 0.78 : 0.95)
+            } else {
+                LottieAnimationContainer()
+                    .frame(width: barW + 4, height: barH + 4)
+                    .opacity(coexisting ? 0.78 : 0.95)
+            }
+        }
     }
 }
 

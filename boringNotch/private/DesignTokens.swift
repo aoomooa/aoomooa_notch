@@ -182,8 +182,9 @@ enum DS {
         /// 计时器：圆环直径、收起时左右两侧的宽度
         static let timerRing: CGFloat = 72
         static let timerSide: CGFloat = 44
-        /// AI 哨兵：收起时左右两侧宽度、主灯 / 副灯直径
+        /// AI 哨兵：收起时左右两侧宽度、媒体共存外翼宽度、主灯 / 副灯直径
         static let sentinelSide: CGFloat = 34
+        static let sentinelMediaWing: CGFloat = 26
         static let sentinelLight: CGFloat = 8
         static let sentinelDotSmall: CGFloat = 6
         /// 品牌徽标（设置关于页 / 侧栏底角）

@@ -72,6 +72,11 @@ struct ContentView: View {
         (musicManager.isPlaying || !musicManager.isPlayerIdle) && coordinator.musicLiveActivityEnabled
     }
 
+    /// AI 活跃时仅在媒体真正播放中展示外侧媒体翼（暂停即自动收翼，把空间还给 AI）
+    private var showsMediaWithSentinel: Bool {
+        coordinator.musicLiveActivityEnabled && musicManager.isPlaying
+    }
+
     private var computedChinWidth: CGFloat {
         var chinWidth: CGFloat = vm.closedNotchSize.width
 
@@ -84,13 +89,17 @@ struct ContentView: View {
         {
             chinWidth += (2 * DS.Size.timerSide)
         } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
-            && sentinel.showsOnClosedNotch && (sentinel.isUrgent || !isMusicLiveActive)
+            && sentinel.showsOnClosedNotch
         {
-            chinWidth += (2 * AoomooaSentinelLiveActivity.sideWidth(for: sentinel.orderedActiveRecords.count))
+            chinWidth += (2 * AoomooaSentinelLiveActivity.sideWidth(
+                for: sentinel.orderedActiveRecords.count,
+                withMedia: showsMediaWithSentinel
+            ))
         } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music)
             && vm.notchState == .closed && isMusicLiveActive && !vm.hideOnClosed
         {
-            chinWidth += (2 * max(0, vm.effectiveClosedNotchHeight - 12) + 20)
+            let mediaWing = max(DS.Size.sentinelMediaWing, vm.effectiveClosedNotchHeight - 8)
+            chinWidth += (2 * mediaWing)
         } else if !coordinator.expandingView.show && vm.notchState == .closed
             && (!musicManager.isPlaying && musicManager.isPlayerIdle) && Defaults[.showNotHumanFace]
             && !vm.hideOnClosed
@@ -173,6 +182,8 @@ struct ContentView: View {
                         return view
                             .animation(vm.notchState == .open ? openAnimation : closeAnimation, value: vm.notchState)
                             .animation(DS.Motion.panel, value: gestureProgress)
+                            .animation(DS.Motion.panel, value: showsMediaWithSentinel)
+                            .animation(DS.Motion.panel, value: sentinel.orderedActiveRecords.count)
                     }
                     .contentShape(Rectangle())
                     .onHover { hovering in
@@ -330,18 +341,16 @@ struct ContentView: View {
                               }
                           }
                       } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
-                                    && sentinel.showsOnClosedNotch && (sentinel.isUrgent || !isMusicLiveActive) {
-                          // aoomooa: AI 哨兵 — 左边 AI 原生 Logo，右边状态小灯
-                          AoomooaSentinelLiveActivity(height: vm.effectiveClosedNotchHeight,
-                                                      middleWidth: vm.closedNotchSize.width - cornerRadiusInsets.closed.top)
+                                    && sentinel.showsOnClosedNotch {
+                          // aoomooa: AI 哨兵（内侧左1↔右1，媒体播放时外侧镜像伸出封面与波形，暂停自动收翼）
+                          AoomooaSentinelLiveActivity(
+                              height: vm.effectiveClosedNotchHeight,
+                              middleWidth: vm.closedNotchSize.width - cornerRadiusInsets.closed.top,
+                              showsMedia: showsMediaWithSentinel
+                          )
                       } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music) && vm.notchState == .closed && isMusicLiveActive && !vm.hideOnClosed {
-                          HStack(spacing: DS.Space.xs) {
-                              MusicLiveActivity()
-                                  .frame(alignment: .center)
-                              if sentinel.showsOnClosedNotch {
-                                  AoomooaSentinelEdgeDot()
-                              }
-                          }
+                          MusicLiveActivity()
+                              .frame(alignment: .center)
                       } else if !coordinator.expandingView.show && vm.notchState == .closed && (!musicManager.isPlaying && musicManager.isPlayerIdle) && Defaults[.showNotHumanFace] && !vm.hideOnClosed  {
                           BoringFaceAnimation()
                        } else if vm.notchState == .open {
@@ -447,19 +456,19 @@ struct ContentView: View {
 
     @ViewBuilder
     func MusicLiveActivity() -> some View {
-        HStack {
-            Image(nsImage: musicManager.albumArt)
-                .resizable()
-                .clipped()
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: MusicPlayerImageSizes.cornerRadiusInset.closed)
-                )
-                .matchedGeometryEffect(id: "albumArt", in: albumArtNamespace)
-                .frame(
-                    width: max(0, vm.effectiveClosedNotchHeight - 12),
-                    height: max(0, vm.effectiveClosedNotchHeight - 12)
-                )
+        let wingWidth = max(DS.Size.sentinelMediaWing, vm.effectiveClosedNotchHeight - 8)
+        let artworkSize = max(16, min(20, vm.effectiveClosedNotchHeight - 13))
+        let auraColor = AoomooaMediaAuraArtwork.resolvedAuraColor(from: musicManager.avgColor)
+
+        HStack(spacing: 0) {
+            AoomooaMediaAuraArtwork(
+                image: musicManager.albumArt,
+                auraColor: auraColor,
+                size: artworkSize,
+                isPlaying: musicManager.isPlaying
+            )
+            .matchedGeometryEffect(id: "albumArt", in: albumArtNamespace)
+            .frame(width: wingWidth, height: vm.effectiveClosedNotchHeight)
 
             Rectangle()
                 .fill(.black)
@@ -505,40 +514,16 @@ struct ContentView: View {
                         && Defaults[.sneakPeekStyles] == .inline)
                         ? 380
                         : vm.closedNotchSize.width
-                            + -cornerRadiusInsets.closed.top
+                            - cornerRadiusInsets.closed.top
                 )
 
-            HStack {
-                if useMusicVisualizer {
-                    Rectangle()
-                        .fill(
-                            Defaults[.coloredSpectrogram]
-                                ? Color(nsColor: musicManager.avgColor).gradient
-                                : Color.gray.gradient
-                        )
-                        .frame(width: 50, alignment: .center)
-                        .matchedGeometryEffect(id: "spectrum", in: albumArtNamespace)
-                        .mask {
-                            AudioSpectrumView(isPlaying: $musicManager.isPlaying)
-                                .frame(width: 16, height: 12)
-                        }
-                } else {
-                    LottieAnimationContainer()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .frame(
-                width: max(
-                    0,
-                    vm.effectiveClosedNotchHeight - 12
-                        + gestureProgress / 2
-                ),
-                height: max(
-                    0,
-                    vm.effectiveClosedNotchHeight - 12
-                ),
-                alignment: .center
+            AoomooaMediaSpectrumWing(
+                isPlaying: $musicManager.isPlaying,
+                auraColor: auraColor,
+                coexisting: false
             )
+            .matchedGeometryEffect(id: "spectrum", in: albumArtNamespace)
+            .frame(width: wingWidth, height: vm.effectiveClosedNotchHeight)
         }
         .frame(
             height: vm.effectiveClosedNotchHeight,
