@@ -167,6 +167,7 @@ final class AoomooaSentinelModel: ObservableObject {
     private var watchdogTask: Task<Void, Never>?
     private var doneFadeTask: Task<Void, Never>?
     private var workspaceObserver: NSObjectProtocol?
+    private var terminateObserver: NSObjectProtocol?
     private var lastActiveBundleID: String?
     private var iconCache: [SentinelSource: NSImage] = [:]
 
@@ -225,6 +226,10 @@ final class AoomooaSentinelModel: ObservableObject {
         if let obs = workspaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(obs)
             workspaceObserver = nil
+        }
+        if let obs = terminateObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(obs)
+            terminateObserver = nil
         }
     }
 
@@ -336,16 +341,31 @@ final class AoomooaSentinelModel: ObservableObject {
     // MARK: 跨 App 切回自动消灯（前台不失效）
 
     private func installWorkspaceObserverIfNeeded() {
-        guard workspaceObserver == nil else { return }
-        lastActiveBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] note in
-            let bundleID = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
-            Task { @MainActor in
-                self?.handleAppActivation(bundleID)
+        if workspaceObserver == nil {
+            lastActiveBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didActivateApplicationNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] note in
+                let bundleID = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
+                Task { @MainActor in
+                    self?.handleAppActivation(bundleID)
+                }
+            }
+        }
+        if terminateObserver == nil {
+            terminateObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didTerminateApplicationNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] note in
+                let bundleID = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
+                Task { @MainActor in
+                    if let bundleID, let source = SentinelSource.from(bundleID: bundleID) {
+                        self?.dismiss(source)
+                    }
+                }
             }
         }
     }
@@ -801,30 +821,28 @@ private struct SentinelLightsCluster: View {
     }
 }
 
-/// 单颗状态小灯：灰色 working 轻呼吸 · 红色 attention 轻脉冲 · 绿色 done / 橙色 stale 柔和常亮
+/// 单颗状态小灯：仅灰色 working 轻呼吸；绿（完成）/ 红（确认）/ 橙（长时间）全部安静常亮不闪烁
 struct SentinelLightDot: View {
     let state: SentinelState
     let diameter: CGFloat
     @State private var pulse = false
 
     var body: some View {
-        let animated = state == .working || state == .attention
-        let minOpacity: Double = state == .working ? 0.45 : 0.35
+        let isWorking = state == .working
         Circle()
             .fill(state.color)
             .frame(width: diameter, height: diameter)
-            .shadow(color: state.color.opacity(state == .working ? 0.25 : 0.75), radius: diameter * 0.5)
-            .opacity(animated ? (pulse ? minOpacity : 1.0) : 1.0)
-            .scaleEffect(state == .attention && pulse ? 0.85 : 1.0)
+            .shadow(color: state.color.opacity(isWorking ? 0.2 : 0.65), radius: diameter * 0.45)
+            .opacity(isWorking ? (pulse ? 0.45 : 1.0) : 1.0)
+            .id(isWorking)
             .onAppear { restartPulse() }
             .onChange(of: state) { _, _ in restartPulse() }
     }
 
     private func restartPulse() {
-        pulse = false
-        guard state == .working || state == .attention else { return }
-        let duration = state == .attention ? 0.9 : 1.5
-        withAnimation(.easeInOut(duration: duration).repeatForever(autoreverses: true)) {
+        withTransaction(DS.Motion.instant) { pulse = false }
+        guard state == .working else { return }
+        withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
             pulse = true
         }
     }
