@@ -1,16 +1,18 @@
 # AI 任务哨兵接入指南（Antigravity · DeepSeek Harness · Claude）
 
 AooMooa Notch 启动后，会在本机回环地址 **`127.0.0.1:17425`** 启动极简状态监听（空闲 `0.0%` CPU）：
-- **口令鉴权**：首次启动自动生成 256-bit 随机口令，写入 `~/Library/Containers/com.aoomooa.notch/Data/Library/Application Support/aoomooa-sentinel/token`（权限 `0600`，仅当前用户可读）。
+- **口令鉴权**：首次启动自动生成 256-bit 随机口令，并自动镜像到 `~/.aoomooa-notch/token`（目录 `0700`、文件 `0600`，避开 macOS Desktop / Container TCC 拦截，仅当前用户可读）。
 - **防跨站请求**：必须携带自定义请求头 `X-Notch-Token`，凡带 `Origin` 头的浏览器请求一律 `403` 拒绝。
 - **隐私边界**：仅在内存中保存当前灯态与简短状态标签，不写日志、不落盘任何对话内容。
+
+> **重要**：如果本仓库放在 `~/Desktop` 下，请先把 `scripts/sentinel/` 里的脚本复制到 `~/.aoomooa-notch/` 再配置给 Claude / DeepSeek Harness，避免 macOS 桌面文件夹 TCC 权限拦截。
 
 ---
 
 ## 0. 手动测试（验证本机通道）
 
 ```bash
-TOKEN="$(cat "$HOME/Library/Containers/com.aoomooa.notch/Data/Library/Application Support/aoomooa-sentinel/token")"
+TOKEN="$(cat "$HOME/.aoomooa-notch/token")"
 curl -s -X POST http://127.0.0.1:17425/status \
   -H "Content-Type: application/json" \
   -H "X-Notch-Token: $TOKEN" \

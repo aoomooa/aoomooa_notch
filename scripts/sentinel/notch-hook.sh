@@ -16,7 +16,8 @@ set -u
 
 SOURCE="${1:-antigravity}"
 PORT="${AOOMOOA_NOTCH_PORT:-17425}"
-TOKEN_FILE="${AOOMOOA_NOTCH_TOKEN_FILE:-$HOME/Library/Containers/com.aoomooa.notch/Data/Library/Application Support/aoomooa-sentinel/token}"
+TOKEN_FILE="${AOOMOOA_NOTCH_TOKEN_FILE:-$HOME/.aoomooa-notch/token}"
+FALLBACK_TOKEN_FILE="$HOME/Library/Containers/com.aoomooa.notch/Data/Library/Application Support/aoomooa-sentinel/token"
 
 # 一次性读入 stdin（Antigravity / Claude Code 传入的 JSON 事件）
 PAYLOAD=""
@@ -29,8 +30,12 @@ printf '{}'
 
 # 后台解析事件并上报（完全脱离当前 stdout/stderr，避免宿主等待子进程关闭管道）
 (
-  [ -r "$TOKEN_FILE" ] || exit 0
-  TOKEN="$(tr -d '\r\n' < "$TOKEN_FILE" 2>/dev/null || true)"
+  TOKEN=""
+  if [ -r "$TOKEN_FILE" ]; then
+    TOKEN="$(tr -d '\r\n' < "$TOKEN_FILE" 2>/dev/null || true)"
+  elif [ -r "$FALLBACK_TOKEN_FILE" ]; then
+    TOKEN="$(tr -d '\r\n' < "$FALLBACK_TOKEN_FILE" 2>/dev/null || true)"
+  fi
   [ -n "$TOKEN" ] || exit 0
 
   /usr/bin/python3 - "$SOURCE" "$PORT" "$TOKEN" <<'PY' "$PAYLOAD"

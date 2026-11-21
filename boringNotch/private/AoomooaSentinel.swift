@@ -159,7 +159,7 @@ final class AoomooaSentinelModel: ObservableObject {
     @Published var isPopoverActive = false
 
     private(set) var token: String = ""
-    private(set) var tokenFilePath: String = ""
+    @Published private(set) var tokenFilePath: String = ""
 
     private var server: SentinelLoopbackServer?
     private var watchdogTask: Task<Void, Never>?
@@ -209,6 +209,12 @@ final class AoomooaSentinelModel: ObservableObject {
         }
         installWorkspaceObserverIfNeeded()
         startServerIfNeeded()
+        let currentToken = token
+        Task { [weak self] in
+            if let mirrored = await XPCHelperClient.shared.syncSentinelToken(currentToken) {
+                self?.tokenFilePath = mirrored
+            }
+        }
     }
 
     func stop() {

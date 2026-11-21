@@ -23,5 +23,7 @@ import Foundation
     // aoomooa: end leftover mediaremote-adapter.pl processes whose parent app is gone.
     // pids = comma-separated list to check ("" = check every process of this user). Replies with how many were ended.
     func terminateOrphanedAdapters(_ pids: String, marker: String, with reply: @escaping (Int) -> Void)
+    // aoomooa: mirror sentinel token (0600) to ~/.aoomooa-notch/token so external apps aren't blocked by macOS Container TCC
+    func syncSentinelToken(_ token: String, with reply: @escaping (String?) -> Void)
 }
 

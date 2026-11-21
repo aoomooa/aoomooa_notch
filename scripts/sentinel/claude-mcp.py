@@ -14,12 +14,17 @@ import urllib.error
 import urllib.request
 
 PORT = int(os.environ.get("AOOMOOA_NOTCH_PORT", "17425"))
-TOKEN_FILE = os.environ.get(
-    "AOOMOOA_NOTCH_TOKEN_FILE",
-    os.path.expanduser(
-        "~/Library/Containers/com.aoomooa.notch/Data/Library/Application Support/aoomooa-sentinel/token"
-    ),
-)
+TOKEN_FILES = [
+    p
+    for p in [
+        os.environ.get("AOOMOOA_NOTCH_TOKEN_FILE"),
+        os.path.expanduser("~/.aoomooa-notch/token"),
+        os.path.expanduser(
+            "~/Library/Containers/com.aoomooa.notch/Data/Library/Application Support/aoomooa-sentinel/token"
+        ),
+    ]
+    if p
+]
 
 TOOL_SPEC = {
     "name": "set_notch_status",
@@ -49,11 +54,15 @@ TOOL_SPEC = {
 
 
 def read_token() -> str:
-    try:
-        with open(TOKEN_FILE, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    except OSError:
-        return ""
+    for path in TOKEN_FILES:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                val = f.read().strip()
+                if val:
+                    return val
+        except OSError:
+            continue
+    return ""
 
 
 def post_status(state: str, label: str = "") -> tuple[bool, str]:

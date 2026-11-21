@@ -14,11 +14,13 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export const name = "aoomooa-notch-sentinel";
-export const inject = ["session"];
+// 注意：dsh-session 的服务名是 "sessions"，而监听 session/event 本身不依赖 inject，
+// 与内置 dsh-session-persistence-jsonl 保持一致，避免因服务名不匹配导致插件挂起。
 
 const DEFAULT_PORT = Number(process.env.AOOMOOA_NOTCH_PORT || 17425);
-const DEFAULT_TOKEN_FILE =
-  process.env.AOOMOOA_NOTCH_TOKEN_FILE ||
+const DEFAULT_TOKEN_FILES = [
+  process.env.AOOMOOA_NOTCH_TOKEN_FILE,
+  join(homedir(), ".aoomooa-notch", "token"),
   join(
     homedir(),
     "Library",
@@ -29,23 +31,29 @@ const DEFAULT_TOKEN_FILE =
     "Application Support",
     "aoomooa-sentinel",
     "token"
-  );
+  ),
+].filter(Boolean);
 
-function readToken(tokenFile) {
-  try {
-    return readFileSync(tokenFile, "utf8").trim();
-  } catch {
-    return "";
+function readToken(customFile) {
+  const candidates = customFile ? [customFile, ...DEFAULT_TOKEN_FILES] : DEFAULT_TOKEN_FILES;
+  for (const file of candidates) {
+    try {
+      const value = readFileSync(file, "utf8").trim();
+      if (value) return value;
+    } catch {
+      // try next candidate
+    }
   }
+  return "";
 }
 
 export function apply(ctx, config = {}) {
   const port = Number(config.port || DEFAULT_PORT);
-  const tokenFile = config.tokenFile || DEFAULT_TOKEN_FILE;
-  let cachedToken = readToken(tokenFile);
+  const customTokenFile = config.tokenFile || "";
+  let cachedToken = readToken(customTokenFile);
 
   async function report(state, label) {
-    if (!cachedToken) cachedToken = readToken(tokenFile);
+    if (!cachedToken) cachedToken = readToken(customTokenFile);
     if (!cachedToken) return;
 
     const payload = label
@@ -67,7 +75,7 @@ export function apply(ctx, config = {}) {
       const res = await send(cachedToken);
       if (res.status === 401) {
         // 刘海重新生成了口令时重读一次
-        cachedToken = readToken(tokenFile);
+        cachedToken = readToken(customTokenFile);
         if (cachedToken) await send(cachedToken);
       }
     } catch {
