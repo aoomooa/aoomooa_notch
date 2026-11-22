@@ -58,7 +58,7 @@ class BoringViewCoordinator: ObservableObject {
 
     @AppStorage("firstLaunch") var firstLaunch: Bool = true
     @AppStorage("showWhatsNew") var showWhatsNew: Bool = true
-    @AppStorage("musicLiveActivityEnabled") var musicLiveActivityEnabled: Bool = true
+    @Published var musicLiveActivityEnabled: Bool = true
     @AppStorage("currentMicStatus") var currentMicStatus: Bool = true
 
     @AppStorage("alwaysShowTabs") var alwaysShowTabs: Bool = true {
@@ -100,6 +100,7 @@ class BoringViewCoordinator: ObservableObject {
     private var hudReplacementCancellable: AnyCancellable?
 
     private init() {
+        UserDefaults.standard.removeObject(forKey: "musicLiveActivityEnabled")
         // Perform migration from name-based to UUID-based storage
         if preferredScreenUUID == nil, let legacyName = legacyPreferredScreenName {
             // Try to find screen by name and migrate to UUID

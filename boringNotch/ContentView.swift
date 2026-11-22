@@ -88,7 +88,8 @@ struct ContentView: View {
             && vm.notchState == .closed && Defaults[.showPowerStatusNotifications]
         {
             chinWidth = 640
-        } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
+        } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music)
+            && vm.notchState == .closed && !vm.hideOnClosed
             && (sentinel.showsOnClosedNotch || showsTimerOnClosedNotch)
         {
             let aiCount = sentinel.showsOnClosedNotch ? sentinel.orderedActiveRecords.count : 0
@@ -333,7 +334,8 @@ struct ContentView: View {
                       } else if coordinator.sneakPeek.show && Defaults[.inlineHUD] && (coordinator.sneakPeek.type != .music) && (coordinator.sneakPeek.type != .battery) && vm.notchState == .closed {
                           InlineHUD(type: $coordinator.sneakPeek.type, value: $coordinator.sneakPeek.value, icon: $coordinator.sneakPeek.icon, hoverAnimation: $isHovering, gestureProgress: $gestureProgress)
                               .transition(.opacity)
-                      } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
+                      } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music)
+                                    && vm.notchState == .closed && !vm.hideOnClosed
                                     && (sentinel.showsOnClosedNotch || showsTimerOnClosedNotch) {
                           // aoomooa: 同心三层镜像共存（外侧 [⏱ 铃声 · 🎬 视频] ── 12pt ── [内侧 AI] ── [硬件刘海] ── [内侧 AI 呼吸灯] ── 12pt ── [〰️ 波浪 · 0:23]）
                           AoomooaSentinelLiveActivity(
@@ -694,27 +696,6 @@ struct ContentView: View {
     }
 
     private func handleUpGesture(translation: CGFloat, phase: NSEvent.Phase) {
-        // aoomooa: on the closed notch, two-finger swipe up hides the playing live activity
-        if vm.notchState == .closed {
-            if phase == .ended { swipeLatched = false; return }
-            guard !swipeLatched, translation > AoomooaHover.swipeDistance,
-                  coordinator.musicLiveActivityEnabled,
-                  musicManager.isPlaying || !musicManager.isPlayerIdle else { return }
-            swipeLatched = true
-            stage1Task?.cancel()
-            stage1Task = nil
-            withTransaction(AoomooaHover.instant) {
-                hoverProgress = 0
-                coordinator.setMusicPeekInstant(false)
-            }
-            if Defaults[.enableHaptics] { haptics.toggle() }
-            withAnimation(AoomooaHover.collapseAnimation) {
-                coordinator.objectWillChange.send()
-                coordinator.musicLiveActivityEnabled = false
-            }
-            return
-        }
-        // aoomooa: 时间页（日历列表 + 计时器滚轮）本身需要上下滑动，屏蔽上滑收起手势避免误触
         guard vm.notchState == .open && !vm.isHoveringCalendar,
               coordinator.currentView != .timer,
               !AoomooaGestureGate.verticalScrollerHovered else { return }
