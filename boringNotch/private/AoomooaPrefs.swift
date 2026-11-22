@@ -17,7 +17,7 @@ enum AoomooaPrefs {
         static let animationSpeed = "aoomooa.animationSpeed"
         static let timerMinutes = "aoomooa.timerDefaultMinutes"
         static let timerShowWhenClosed = "aoomooa.timerShowWhenClosed"
-        static let timerTone = "aoomooa.timerTone"
+        static let timerTone = "aoomooa.timerTone.v2"
         static let weatherCity = "aoomooa.weatherCity"
         static let sentinelEnabled = "aoomooa.sentinelEnabled"
         static let sentinelPort = "aoomooa.sentinelPort"
@@ -41,8 +41,8 @@ enum AoomooaPrefs {
         static let timerMinutes: Int = 25
         /// 收起时在刘海上显示倒计时
         static let timerShowWhenClosed: Bool = true
-        /// 计时器到点提示音（苹果原生铃声标识）
-        static let timerTone: String = "daybreak"
+        /// 计时器到点提示音（苹果原生铃声标识，默认水晶清铃）
+        static let timerTone: String = "crystals"
         /// 天气城市，空 = 按网络位置自动判断
         static let weatherCity: String = ""
         /// AI 状态哨兵总开关与本机回环端口

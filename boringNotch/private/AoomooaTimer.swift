@@ -12,45 +12,45 @@ import Defaults
 import SwiftUI
 
 enum TimerAlarmTone: String, CaseIterable, Identifiable {
+    case crystals
+    case bulletin
+    case beacon
+    case bellTower
+    case presto
     case daybreak
-    case valley
-    case radial
-    case reflection
-    case cheers
-    case glass
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .daybreak:   return "破晓（默认）"
-        case .valley:     return "山谷"
-        case .radial:     return "径向"
-        case .reflection: return "倒影"
-        case .cheers:     return "欢呼"
-        case .glass:      return "清脆"
+        case .crystals:  return "水晶（默认）"
+        case .bulletin:  return "简报双音"
+        case .beacon:    return "信标"
+        case .bellTower: return "钟楼"
+        case .presto:    return "急板"
+        case .daybreak:  return "破晓（柔和）"
         }
     }
 
     var filePath: String {
         switch self {
+        case .crystals:
+            return "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/Ringtones/Crystals.m4r"
+        case .bulletin:
+            return "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/Ringtones/Bulletin.m4r"
+        case .beacon:
+            return "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/Ringtones/Beacon.m4r"
+        case .bellTower:
+            return "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/Ringtones/Bell Tower.m4r"
+        case .presto:
+            return "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/Ringtones/Presto.m4r"
         case .daybreak:
             return "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/Ringtones/Daybreak-EncoreInfinitum.m4r"
-        case .valley:
-            return "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/Ringtones/Valley-EncoreInfinitum.m4r"
-        case .radial:
-            return "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/Ringtones/Radial-EncoreInfinitum.m4r"
-        case .reflection:
-            return "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/Ringtones/Reflection-EncoreInfinitum.m4r"
-        case .cheers:
-            return "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/AlertTones/EncoreInfinitum/Cheers-EncoreInfinitum.caf"
-        case .glass:
-            return "/System/Library/Sounds/Glass.aiff"
         }
     }
 
     static var current: TimerAlarmTone {
-        TimerAlarmTone(rawValue: AoomooaPrefs.timerTone) ?? .daybreak
+        TimerAlarmTone(rawValue: AoomooaPrefs.timerTone) ?? .crystals
     }
 }
 
@@ -223,7 +223,7 @@ final class NotchTimerModel: ObservableObject {
 
     private func playToneLoop(duration: TimeInterval) {
         if let player = makeAudioPlayer() {
-            player.volume = 0.85
+            player.volume = 1.0
             player.numberOfLoops = -1
             player.prepareToPlay()
             player.play()
@@ -244,9 +244,9 @@ final class NotchTimerModel: ObservableObject {
     private func makeAudioPlayer() -> AVAudioPlayer? {
         let candidates = [
             TimerAlarmTone.current.filePath,
-            TimerAlarmTone.daybreak.filePath,
-            TimerAlarmTone.valley.filePath,
-            TimerAlarmTone.glass.filePath
+            TimerAlarmTone.crystals.filePath,
+            TimerAlarmTone.bulletin.filePath,
+            "/System/Library/Sounds/Glass.aiff"
         ]
         for path in candidates {
             let url = URL(fileURLWithPath: path)
@@ -457,70 +457,27 @@ struct AoomooaPillButton: View {
     }
 }
 
-// MARK: - 收起时的刘海：左边 ⏱，右边 mm:ss（到点时双侧闪烁 + 响铃，鼠标悬停展开即结束）
+// MARK: - 收起态刘海计时器左右翼组件（支持与视频封面/小波浪及 AI 状态灯同心共存）
 
-struct AoomooaTimerLiveActivity: View {
+/// 左耳外侧：计时器图标（⏱ / ⏸ / 到点时闪烁摇摆的 🔔）
+struct AoomooaTimerWingIcon: View {
     @ObservedObject private var timer = NotchTimerModel.shared
-    /// 收起时刘海的高度
-    let height: CGFloat
-    /// 中间（硬件刘海）那段的宽度
-    let middleWidth: CGFloat
-    private static let tick: TimeInterval = 1
-
     @State private var bellPulse = false
 
-    private var isAlerting: Bool {
-        timer.phase == .finished
-    }
+    private var isAlerting: Bool { timer.phase == .finished }
 
     var body: some View {
-        Group {
-            if isAlerting {
-                HStack(spacing: 0) {
-                    Image(systemName: "bell.fill")
-                        .font(DS.Fonts.body(.semibold))
-                        .foregroundStyle(DS.Colors.accent)
-                        .scaleEffect(bellPulse ? 1.22 : 0.94)
-                        .rotationEffect(.degrees(bellPulse ? 16 : -16))
-                        .opacity(bellPulse ? 0.18 : 1.0)
-                        .frame(width: DS.Size.timerSide, height: height)
-                    Rectangle()
-                        .fill(DS.Colors.background)
-                        .frame(width: max(0, middleWidth), height: height)
-                    Text("时间到")
-                        .font(DS.Fonts.body(.semibold))
-                        .foregroundStyle(DS.Colors.accent)
-                        .opacity(bellPulse ? 0.18 : 1.0)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .frame(width: DS.Size.timerSide, height: height)
-                }
-            } else {
-                TimelineView(.periodic(from: .now, by: Self.tick)) { context in
-                    HStack(spacing: 0) {
-                        Image(systemName: icon)
-                            .font(DS.Fonts.body(.semibold))
-                            .foregroundStyle(tint)
-                            .frame(width: DS.Size.timerSide, height: height)
-                        Rectangle()
-                            .fill(DS.Colors.background)
-                            .frame(width: max(0, middleWidth), height: height)
-                        Text(NotchTimerModel.clock(timer.remaining(at: context.date)))
-                            .font(DS.Fonts.body(.semibold).monospacedDigit())
-                            .foregroundStyle(tint)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                            .frame(width: DS.Size.timerSide, height: height)
-                    }
-                }
-            }
-        }
-        .frame(height: height)
-        .onAppear { updateBellAnimation(isAlerting) }
-        .onChange(of: isAlerting) { _, alerting in updateBellAnimation(alerting) }
+        Image(systemName: icon)
+            .font(DS.Fonts.body(.semibold))
+            .foregroundStyle(tint)
+            .scaleEffect(isAlerting ? (bellPulse ? 1.22 : 0.94) : 1.0)
+            .rotationEffect(.degrees(isAlerting ? (bellPulse ? 16 : -16) : 0))
+            .opacity(isAlerting && bellPulse ? 0.18 : 1.0)
+            .onAppear { updateAnimation(isAlerting) }
+            .onChange(of: isAlerting) { _, alerting in updateAnimation(alerting) }
     }
 
-    private func updateBellAnimation(_ alerting: Bool) {
+    private func updateAnimation(_ alerting: Bool) {
         withTransaction(DS.Motion.instant) { bellPulse = false }
         guard alerting else { return }
         DispatchQueue.main.async {
@@ -534,16 +491,59 @@ struct AoomooaTimerLiveActivity: View {
     private var icon: String {
         switch timer.phase {
         case .finished: return "bell.fill"
-        case .paused: return "pause.fill"
-        default: return "timer"
+        case .paused:   return "pause.fill"
+        default:        return "timer"
         }
     }
 
     private var tint: Color {
         switch timer.phase {
         case .finished: return DS.Colors.accent
-        case .paused: return DS.Colors.textSecondary
-        default: return DS.Colors.textPrimary
+        case .paused:   return DS.Colors.textSecondary
+        default:        return DS.Colors.textPrimary
+        }
+    }
+}
+
+/// 右耳外侧：倒计时读秒（mm:ss / 到点时闪烁的“时间到”）
+struct AoomooaTimerWingLabel: View {
+    @ObservedObject private var timer = NotchTimerModel.shared
+    private static let tick: TimeInterval = 1
+    @State private var bellPulse = false
+
+    private var isAlerting: Bool { timer.phase == .finished }
+
+    var body: some View {
+        Group {
+            if isAlerting {
+                Text("时间到")
+                    .font(DS.Fonts.body(.semibold))
+                    .foregroundStyle(DS.Colors.accent)
+                    .opacity(bellPulse ? 0.18 : 1.0)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.68)
+            } else {
+                TimelineView(.periodic(from: .now, by: Self.tick)) { context in
+                    Text(NotchTimerModel.clock(timer.remaining(at: context.date)))
+                        .font(DS.Fonts.body(.semibold).monospacedDigit())
+                        .foregroundStyle(timer.phase == .paused ? DS.Colors.textSecondary : DS.Colors.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.68)
+                }
+            }
+        }
+        .onAppear { updateAnimation(isAlerting) }
+        .onChange(of: isAlerting) { _, alerting in updateAnimation(alerting) }
+    }
+
+    private func updateAnimation(_ alerting: Bool) {
+        withTransaction(DS.Motion.instant) { bellPulse = false }
+        guard alerting else { return }
+        DispatchQueue.main.async {
+            guard isAlerting else { return }
+            withAnimation(.easeInOut(duration: 0.36).repeatForever(autoreverses: true)) {
+                bellPulse = true
+            }
         }
     }
 }

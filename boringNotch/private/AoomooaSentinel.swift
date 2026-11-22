@@ -695,7 +695,10 @@ private final class SentinelLoopbackServer: @unchecked Sendable {
     }
 }
 
-// MARK: - 收起态刘海视图：内侧 AI（左1↔右1 · 左2↔右2 · 左3↔右3）· 外侧媒体镜像共存
+// MARK: - 收起态刘海视图：同心三层镜像共存
+//   左耳：[⏱ 铃声] · [🎬 视频封面] ── (12pt 留白) ── [AI Logo 1..3]
+//   中间：[ 硬件刘海 ]
+//   右耳：[AI 呼吸灯 1..3] ── (12pt 留白) ── [〰️ 视频小波浪] · [0:23 铃的时间]
 
 struct AoomooaSentinelLiveActivity: View {
     @ObservedObject private var sentinel = AoomooaSentinelModel.shared
@@ -703,36 +706,53 @@ struct AoomooaSentinelLiveActivity: View {
     let height: CGFloat
     let middleWidth: CGFloat
     var showsMedia: Bool = false
+    var showsTimer: Bool = false
 
-    /// 仅 AI 区域单侧宽度
-    static func aiClusterWidth(for count: Int, withMedia: Bool) -> CGFloat {
-        if withMedia {
+    private static let timerCoexistWing: CGFloat = 40
+
+    /// 仅 AI 区域单侧宽度（count == 0 时为 0）
+    static func aiClusterWidth(for count: Int, withOuter: Bool) -> CGFloat {
+        guard count > 0 else { return 0 }
+        if withOuter {
             switch count {
-            case ...1: return 24
+            case 1: return 24
             case 2: return 40
             default: return 56
             }
         }
         switch count {
-        case ...1: return DS.Size.sentinelSide   // 34 pt
+        case 1: return DS.Size.sentinelSide   // 34 pt
         case 2: return 48
         default: return 64
         }
     }
 
-    /// 根据活跃 AI 数量与是否媒体共存，计算严格对称的单侧耳宽（保证硬件刘海绝对居中）
-    static func sideWidth(for count: Int, withMedia: Bool = false) -> CGFloat {
-        let ai = aiClusterWidth(for: count, withMedia: withMedia)
-        return withMedia ? (ai + DS.Space.m + DS.Size.sentinelMediaWing) : ai
+    /// 根据活跃 AI 数量、媒体播放与计时器状态，计算严格对称的单侧耳宽（保证硬件刘海绝对居中）
+    static func sideWidth(for count: Int, withMedia: Bool = false, withTimer: Bool = false) -> CGFloat {
+        // 仅计时器单独运行
+        if count == 0 && !withMedia && withTimer {
+            return DS.Size.timerSide
+        }
+        let hasOuter = withMedia || withTimer
+        let ai = aiClusterWidth(for: count, withOuter: hasOuter)
+        let aiToOuterGap: CGFloat = (count > 0 && hasOuter) ? DS.Space.m : (count == 0 && hasOuter ? DS.Space.s : 0)
+        let mediaW: CGFloat = withMedia ? DS.Size.sentinelMediaWing : 0
+        let pairGap: CGFloat = (withMedia && withTimer) ? DS.Space.xs : 0
+        let timerW: CGFloat = withTimer ? timerCoexistWing : 0
+        return ai + aiToOuterGap + mediaW + pairGap + timerW
     }
 
     var body: some View {
-        let records = Array(sentinel.orderedActiveRecords.prefix(3))
-        let aiWidth = Self.aiClusterWidth(for: records.count, withMedia: showsMedia)
-        let earWidth = Self.sideWidth(for: records.count, withMedia: showsMedia)
+        let records = sentinel.showsOnClosedNotch ? Array(sentinel.orderedActiveRecords.prefix(3)) : []
+        let hasAI = !records.isEmpty
+        let hasOuter = showsMedia || showsTimer
+        let isSoloTimer = !hasAI && !showsMedia && showsTimer
+        let aiWidth = Self.aiClusterWidth(for: records.count, withOuter: hasOuter)
+        let earWidth = Self.sideWidth(for: records.count, withMedia: showsMedia, withTimer: showsTimer)
+        let aiToOuterGap: CGFloat = (hasAI && hasOuter) ? DS.Space.m : (!hasAI && hasOuter && !isSoloTimer ? DS.Space.s : 0)
         let iconSize: CGFloat = {
             switch records.count {
-            case ...1: return max(16, min(showsMedia ? 18 : 20, height - 12))
+            case ...1: return max(16, min(hasOuter ? 18 : 20, height - 12))
             case 2: return max(15, min(16, height - 14))
             default: return max(14, min(15, height - 15))
             }
@@ -741,8 +761,24 @@ struct AoomooaSentinelLiveActivity: View {
         let auraColor = AoomooaMediaAuraArtwork.resolvedAuraColor(from: musicManager.avgColor)
 
         HStack(spacing: 0) {
-            // 左耳：[外侧媒体封面（可选）] + 12pt 呼吸留白 + [内侧 AI Logo 1..3]
+            // 左耳：[⏱ 铃声图标（左1）] + 4pt + [🎬 媒体封面（左2）] + 12pt 留白 + [内侧 AI Logo]
             HStack(spacing: 0) {
+                if showsTimer {
+                    AoomooaTimerWingIcon()
+                        .frame(
+                            width: isSoloTimer ? DS.Size.timerSide : Self.timerCoexistWing,
+                            height: height,
+                            alignment: showsMedia ? .trailing : .center
+                        )
+                        .padding(.trailing, showsMedia ? 2 : 0)
+                        .transition(.opacity.combined(with: .scale(scale: 0.82)))
+                }
+
+                if showsTimer && showsMedia {
+                    Spacer(minLength: 0)
+                        .frame(width: DS.Space.xs)
+                }
+
                 if showsMedia {
                     AoomooaMediaAuraArtwork(
                         image: musicManager.albumArt,
@@ -752,17 +788,21 @@ struct AoomooaSentinelLiveActivity: View {
                     )
                     .frame(width: DS.Size.sentinelMediaWing, height: height)
                     .transition(.opacity.combined(with: .scale(scale: 0.82)))
+                }
 
+                if aiToOuterGap > 0 {
                     Spacer(minLength: 0)
-                        .frame(width: DS.Space.m)
+                        .frame(width: aiToOuterGap)
                 }
 
-                HStack(spacing: DS.Space.xs) {
-                    ForEach(records) { record in
-                        SentinelLogoView(source: record.source, size: iconSize)
+                if hasAI {
+                    HStack(spacing: DS.Space.xs) {
+                        ForEach(records) { record in
+                            SentinelLogoView(source: record.source, size: iconSize)
+                        }
                     }
+                    .frame(width: aiWidth, height: height)
                 }
-                .frame(width: aiWidth, height: height)
             }
             .frame(width: earWidth, height: height)
 
@@ -771,15 +811,19 @@ struct AoomooaSentinelLiveActivity: View {
                 .fill(DS.Colors.background)
                 .frame(width: max(0, middleWidth), height: height)
 
-            // 右耳：[内侧 AI 小灯 1..3] + 12pt 镜像留白 + [外侧微降噪音频波形（可选）]
+            // 右耳：[内侧 AI 呼吸灯（右123）] + 12pt 留白 + [〰️ 媒体小波浪] + 4pt + [0:23 铃的时间]
             HStack(spacing: 0) {
-                SentinelLightsCluster(records: records)
-                    .frame(width: aiWidth, height: height)
+                if hasAI {
+                    SentinelLightsCluster(records: records)
+                        .frame(width: aiWidth, height: height)
+                }
+
+                if aiToOuterGap > 0 {
+                    Spacer(minLength: 0)
+                        .frame(width: aiToOuterGap)
+                }
 
                 if showsMedia {
-                    Spacer(minLength: 0)
-                        .frame(width: DS.Space.m)
-
                     AoomooaMediaSpectrumWing(
                         isPlaying: $musicManager.isPlaying,
                         auraColor: auraColor,
@@ -788,12 +832,29 @@ struct AoomooaSentinelLiveActivity: View {
                     .frame(width: DS.Size.sentinelMediaWing, height: height)
                     .transition(.opacity.combined(with: .scale(scale: 0.82)))
                 }
+
+                if showsMedia && showsTimer {
+                    Spacer(minLength: 0)
+                        .frame(width: DS.Space.xs)
+                }
+
+                if showsTimer {
+                    AoomooaTimerWingLabel()
+                        .frame(
+                            width: isSoloTimer ? DS.Size.timerSide : Self.timerCoexistWing,
+                            height: height,
+                            alignment: showsMedia ? .leading : .center
+                        )
+                        .padding(.leading, showsMedia ? 2 : 0)
+                        .transition(.opacity.combined(with: .scale(scale: 0.82)))
+                }
             }
             .frame(width: earWidth, height: height)
         }
         .frame(height: height)
         .animation(DS.Motion.panel, value: records.count)
         .animation(DS.Motion.panel, value: showsMedia)
+        .animation(DS.Motion.panel, value: showsTimer)
     }
 }
 

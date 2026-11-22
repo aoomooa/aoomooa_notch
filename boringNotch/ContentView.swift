@@ -72,9 +72,13 @@ struct ContentView: View {
         (musicManager.isPlaying || !musicManager.isPlayerIdle) && coordinator.musicLiveActivityEnabled
     }
 
-    /// AI 活跃时仅在媒体真正播放中展示外侧媒体翼（暂停即自动收翼，把空间还给 AI）
+    /// AI 或计时器活跃时仅在媒体真正播放中展示外侧媒体翼（暂停即自动收翼，把空间还给 AI）
     private var showsMediaWithSentinel: Bool {
         coordinator.musicLiveActivityEnabled && musicManager.isPlaying
+    }
+
+    private var showsTimerOnClosedNotch: Bool {
+        notchTimer.showsOnClosedNotch(showWhileRunning: timerShowWhenClosed)
     }
 
     private var computedChinWidth: CGFloat {
@@ -85,15 +89,13 @@ struct ContentView: View {
         {
             chinWidth = 640
         } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
-            && notchTimer.showsOnClosedNotch(showWhileRunning: timerShowWhenClosed)
+            && (sentinel.showsOnClosedNotch || showsTimerOnClosedNotch)
         {
-            chinWidth += (2 * DS.Size.timerSide)
-        } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
-            && sentinel.showsOnClosedNotch
-        {
+            let aiCount = sentinel.showsOnClosedNotch ? sentinel.orderedActiveRecords.count : 0
             chinWidth += (2 * AoomooaSentinelLiveActivity.sideWidth(
-                for: sentinel.orderedActiveRecords.count,
-                withMedia: showsMediaWithSentinel
+                for: aiCount,
+                withMedia: showsMediaWithSentinel,
+                withTimer: showsTimerOnClosedNotch
             ))
         } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music)
             && vm.notchState == .closed && isMusicLiveActive && !vm.hideOnClosed
@@ -183,6 +185,7 @@ struct ContentView: View {
                             .animation(vm.notchState == .open ? openAnimation : closeAnimation, value: vm.notchState)
                             .animation(DS.Motion.panel, value: gestureProgress)
                             .animation(DS.Motion.panel, value: showsMediaWithSentinel)
+                            .animation(DS.Motion.panel, value: showsTimerOnClosedNotch)
                             .animation(DS.Motion.panel, value: sentinel.orderedActiveRecords.count)
                     }
                     .contentShape(Rectangle())
@@ -331,22 +334,13 @@ struct ContentView: View {
                           InlineHUD(type: $coordinator.sneakPeek.type, value: $coordinator.sneakPeek.value, icon: $coordinator.sneakPeek.icon, hoverAnimation: $isHovering, gestureProgress: $gestureProgress)
                               .transition(.opacity)
                       } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
-                                    && notchTimer.showsOnClosedNotch(showWhileRunning: timerShowWhenClosed) {
-                          // aoomooa: 计时器 — 左边 ⏱，右边 mm:ss（若同时有 AI 活跃则右侧边缘轻叠小灯）
-                          HStack(spacing: DS.Space.xs) {
-                              AoomooaTimerLiveActivity(height: vm.effectiveClosedNotchHeight,
-                                                       middleWidth: vm.closedNotchSize.width - cornerRadiusInsets.closed.top)
-                              if sentinel.showsOnClosedNotch {
-                                  AoomooaSentinelEdgeDot()
-                              }
-                          }
-                      } else if !coordinator.expandingView.show && vm.notchState == .closed && !vm.hideOnClosed
-                                    && sentinel.showsOnClosedNotch {
-                          // aoomooa: AI 哨兵（内侧左1↔右1，媒体播放时外侧镜像伸出封面与波形，暂停自动收翼）
+                                    && (sentinel.showsOnClosedNotch || showsTimerOnClosedNotch) {
+                          // aoomooa: 同心三层镜像共存（外侧 [⏱ 铃声 · 🎬 视频] ── 12pt ── [内侧 AI] ── [硬件刘海] ── [内侧 AI 呼吸灯] ── 12pt ── [〰️ 波浪 · 0:23]）
                           AoomooaSentinelLiveActivity(
                               height: vm.effectiveClosedNotchHeight,
                               middleWidth: vm.closedNotchSize.width - cornerRadiusInsets.closed.top,
-                              showsMedia: showsMediaWithSentinel
+                              showsMedia: showsMediaWithSentinel,
+                              showsTimer: showsTimerOnClosedNotch
                           )
                       } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music) && vm.notchState == .closed && isMusicLiveActive && !vm.hideOnClosed {
                           MusicLiveActivity()
