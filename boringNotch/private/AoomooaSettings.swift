@@ -164,6 +164,7 @@ struct AoomooaGeneralSettingsView: View {
 struct AoomooaModulesSettingsView: View {
     @AppStorage(AoomooaPrefs.Key.timerMinutes) private var timerMinutes = AoomooaPrefs.Default.timerMinutes
     @AppStorage(AoomooaPrefs.Key.timerShowWhenClosed) private var timerShowWhenClosed = AoomooaPrefs.Default.timerShowWhenClosed
+    @AppStorage(AoomooaPrefs.Key.timerTone) private var timerTone = AoomooaPrefs.Default.timerTone
     @AppStorage(AoomooaPrefs.Key.weatherCity) private var weatherCity = AoomooaPrefs.Default.weatherCity
     @AppStorage(AoomooaPrefs.Key.sentinelEnabled) private var sentinelEnabled = AoomooaPrefs.Default.sentinelEnabled
     @AppStorage(AoomooaPrefs.Key.sentinelTimeoutAntigravity) private var timeoutAntigravity = AoomooaPrefs.Default.sentinelTimeoutAntigravity
@@ -174,6 +175,7 @@ struct AoomooaModulesSettingsView: View {
     @ObservedObject private var aiSites = FavouriteSitesModel.ai
     @ObservedObject private var weather = WeatherModel.shared
     @ObservedObject private var sentinel = AoomooaSentinelModel.shared
+    @ObservedObject private var timerModel = NotchTimerModel.shared
     @State private var copiedTokenPath = false
     @State private var copiedInstallCmd = false
     @State private var copiedClaudePrompt = false
@@ -419,20 +421,39 @@ struct AoomooaModulesSettingsView: View {
     }
 
     private var timerSection: some View {
-        Section("计时器") {
+        Section {
             Stepper(value: $timerMinutes, in: AoomooaPrefs.Limits.timerMinutes) {
                 aoomooaValueRow("滚轮默认时长", "\(timerMinutes) 分钟")
             }
             Toggle("收起时在刘海上显示倒计时", isOn: $timerShowWhenClosed)
-            LabeledContent("到点闹钟提示音") {
-                Button("试听闹钟") {
-                    NotchTimerModel.shared.previewAlarm()
+            LabeledContent("到点提示音") {
+                HStack(spacing: DS.Space.s) {
+                    Picker("", selection: $timerTone) {
+                        ForEach(TimerAlarmTone.allCases) { tone in
+                            Text(tone.displayName).tag(tone.rawValue)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 130)
+                    .onChange(of: timerTone) { _, _ in
+                        timerModel.previewAlarm(forcePlay: true)
+                    }
+
+                    Button(timerModel.isRinging ? "停止" : "试听") {
+                        timerModel.previewAlarm()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(.secondary)
+                    .foregroundStyle(.primary)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .tint(.secondary)
-                .foregroundStyle(.primary)
             }
+        } header: {
+            Text("计时器")
+        } footer: {
+            Text("到点后收起态刘海闪烁并响铃提醒；鼠标移到刘海屏等待展开即刻结束复位，无需点击。")
+                .font(DS.Fonts.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

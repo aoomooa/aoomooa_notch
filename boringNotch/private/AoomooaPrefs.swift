@@ -17,6 +17,7 @@ enum AoomooaPrefs {
         static let animationSpeed = "aoomooa.animationSpeed"
         static let timerMinutes = "aoomooa.timerDefaultMinutes"
         static let timerShowWhenClosed = "aoomooa.timerShowWhenClosed"
+        static let timerTone = "aoomooa.timerTone"
         static let weatherCity = "aoomooa.weatherCity"
         static let sentinelEnabled = "aoomooa.sentinelEnabled"
         static let sentinelPort = "aoomooa.sentinelPort"
@@ -40,6 +41,8 @@ enum AoomooaPrefs {
         static let timerMinutes: Int = 25
         /// 收起时在刘海上显示倒计时
         static let timerShowWhenClosed: Bool = true
+        /// 计时器到点提示音（苹果原生铃声标识）
+        static let timerTone: String = "daybreak"
         /// 天气城市，空 = 按网络位置自动判断
         static let weatherCity: String = ""
         /// AI 状态哨兵总开关与本机回环端口
@@ -77,6 +80,9 @@ enum AoomooaPrefs {
     static var timerShowWhenClosed: Bool {
         (UserDefaults.standard.object(forKey: Key.timerShowWhenClosed) as? Bool) ?? Default.timerShowWhenClosed
     }
+    static var timerTone: String {
+        UserDefaults.standard.string(forKey: Key.timerTone) ?? Default.timerTone
+    }
 
     static var weatherCity: String {
         (UserDefaults.standard.string(forKey: Key.weatherCity) ?? Default.weatherCity)
@@ -107,9 +113,10 @@ enum AoomooaPrefs {
     static func resetAll() {
         let d = UserDefaults.standard
         for key in [Key.hoverDelay, Key.collapseDelay, Key.swipeSensitivity, Key.tintStrength,
-                    Key.animationSpeed, Key.timerMinutes, Key.timerShowWhenClosed, Key.weatherCity,
-                    Key.sentinelEnabled, Key.sentinelPort, Key.sentinelTimeoutAntigravity,
-                    Key.sentinelTimeoutDeepSeek, Key.sentinelTimeoutClaude] {
+                    Key.animationSpeed, Key.timerMinutes, Key.timerShowWhenClosed, Key.timerTone,
+                    Key.weatherCity, Key.sentinelEnabled, Key.sentinelPort,
+                    Key.sentinelTimeoutAntigravity, Key.sentinelTimeoutDeepSeek,
+                    Key.sentinelTimeoutClaude] {
             d.removeObject(forKey: key)
         }
     }

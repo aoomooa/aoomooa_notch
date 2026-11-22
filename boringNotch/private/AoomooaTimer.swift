@@ -1,10 +1,9 @@
 //
-//  AoomooaTimer.swift — 计时器第一版
+//  AoomooaTimer.swift — 计时器
 //
-//  · 顶栏 ⏱ 或双指左右滑到「天气 + 计时器」页：5 / 10 / 15 / 25 分钟，或用滚轮自定义 1–60 分钟
-//  · 收起后刘海两侧显示 ⏱ 和 mm:ss（设置 → aoomooa 可关）
-//  · 到点响一声，刘海显示“时间到”，可以“再来一次”
-//  · 以后加番茄钟：作为新的“预设模式”放在 presetMinutes 旁边，不改这里的流程
+//  · 顶栏 ⏱ 或双指左右滑到「日历 + 计时器」页：5 / 10 / 15 / 25 分钟，或用滚轮自定义 1–60 分钟
+//  · 收起后刘海两侧显示 ⏱ 和 mm:ss（设置 → 模块 → 计时器 可关）
+//  · 到点后收起态刘海闪烁“🔔 时间到”并播放苹果原生铃声；鼠标移到刘海屏等待展开即刻结束并复位，零点击
 //
 
 import AppKit
@@ -12,27 +11,68 @@ import AVFoundation
 import Defaults
 import SwiftUI
 
+enum TimerAlarmTone: String, CaseIterable, Identifiable {
+    case daybreak
+    case valley
+    case radial
+    case reflection
+    case cheers
+    case glass
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .daybreak:   return "破晓（默认）"
+        case .valley:     return "山谷"
+        case .radial:     return "径向"
+        case .reflection: return "倒影"
+        case .cheers:     return "欢呼"
+        case .glass:      return "清脆"
+        }
+    }
+
+    var filePath: String {
+        switch self {
+        case .daybreak:
+            return "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/Ringtones/Daybreak-EncoreInfinitum.m4r"
+        case .valley:
+            return "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/Ringtones/Valley-EncoreInfinitum.m4r"
+        case .radial:
+            return "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/Ringtones/Radial-EncoreInfinitum.m4r"
+        case .reflection:
+            return "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/Ringtones/Reflection-EncoreInfinitum.m4r"
+        case .cheers:
+            return "/System/Library/PrivateFrameworks/ToneLibrary.framework/Versions/A/Resources/AlertTones/EncoreInfinitum/Cheers-EncoreInfinitum.caf"
+        case .glass:
+            return "/System/Library/Sounds/Glass.aiff"
+        }
+    }
+
+    static var current: TimerAlarmTone {
+        TimerAlarmTone(rawValue: AoomooaPrefs.timerTone) ?? .daybreak
+    }
+}
+
 @MainActor
 final class NotchTimerModel: ObservableObject {
     static let shared = NotchTimerModel()
 
     enum Phase: Equatable { case idle, running, paused, finished }
 
-    /// 第一版的快捷时长（分钟）
+    /// 快捷时长（分钟）
     static let presetMinutes = [5, 10, 15, 25]
-    /// “时间到”在刘海上停留多久后自动收起（秒）
-    static let finishedBannerDuration: TimeInterval = 120
-    /// 到点闹钟连响轮数（每轮双音钟声，展开刘海或点完成立即止响）
-    static let alarmRepeatCount = 5
-    /// 每轮闹钟间隔（秒）
-    static let alarmRepeatInterval: TimeInterval = 2.1
+    /// 到点闹钟与闪烁持续时长（秒）；超时未展开刘海也自动结束复位
+    static let finishedBannerDuration: TimeInterval = 12
+    /// 设置页试听时长（秒）
+    static let previewDuration: TimeInterval = 3.6
 
     @Published private(set) var phase: Phase = .idle
-    /// 是否正在持续响铃中（展开刘海或点按钮即停）
+    /// 是否正在响铃/闪烁中（展开刘海即停）
     @Published private(set) var isRinging: Bool = false
     /// 本轮总时长（秒，含中途 +1 分钟）
     @Published private(set) var duration: TimeInterval = 0
-    /// 上一次开始时选的分钟数（“再来一次”用）
+    /// 上一次开始时选的分钟数
     @Published private(set) var lastMinutes: Int = 0
     /// 自定义时长（分钟），默认取设置里的“默认时长”
     @Published var customMinutes: Int = AoomooaPrefs.timerMinutes
@@ -43,8 +83,6 @@ final class NotchTimerModel: ObservableObject {
     private var bannerTask: Task<Void, Never>?
     private var alarmTask: Task<Void, Never>?
     private var alarmPlayer: AVAudioPlayer?
-
-    private static let cachedChimeWAV: Data = buildChimeWAV()
 
     private init() {}
 
@@ -110,12 +148,7 @@ final class NotchTimerModel: ObservableObject {
         }
     }
 
-    /// 再来一次：用上一次的时长重新开始
-    func again() {
-        start(minutes: lastMinutes > 0 ? lastMinutes : AoomooaPrefs.timerMinutes)
-    }
-
-    /// 结束 / 完成
+    /// 结束 / 复位到初始状态
     func cancel() {
         stopAlarm()
         finishTask?.cancel()
@@ -125,7 +158,15 @@ final class NotchTimerModel: ObservableObject {
         phase = .idle
     }
 
-    /// 停止闹钟响铃（展开刘海查看或点击按钮时调用）
+    /// 用户把鼠标放在刘海屏并等待刘海展开时调用：若处于到点提示态，立即结束闹钟并复位（零点击）
+    func acknowledgeOnExpand() {
+        stopAlarm()
+        if phase == .finished {
+            cancel()
+        }
+    }
+
+    /// 停止闹钟响铃
     func stopAlarm() {
         alarmTask?.cancel()
         alarmTask = nil
@@ -134,10 +175,15 @@ final class NotchTimerModel: ObservableObject {
         if isRinging { isRinging = false }
     }
 
-    /// 设置页“试听闹钟”按钮：播放一轮清脆双音钟声
-    func previewAlarm() {
+    /// 设置页“试听闹钟”按钮（正在试听时再点即停）
+    func previewAlarm(forcePlay: Bool = false) {
+        if !forcePlay, alarmPlayer?.isPlaying == true {
+            stopAlarm()
+            return
+        }
         stopAlarm()
-        playSingleChime()
+        isRinging = true
+        playToneLoop(duration: Self.previewDuration)
     }
 
     // MARK: 内部
@@ -161,8 +207,6 @@ final class NotchTimerModel: ObservableObject {
         pausedRemaining = 0
         phase = .finished
         startAlarm()
-        // 下次展开直接看到“时间到”和“再来一次”
-        withAnimation(DS.Motion.page) { BoringViewCoordinator.shared.currentView = .timer }
         bannerTask?.cancel()
         bannerTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(Self.finishedBannerDuration))
@@ -174,28 +218,14 @@ final class NotchTimerModel: ObservableObject {
     private func startAlarm() {
         stopAlarm()
         isRinging = true
-        alarmTask = Task { [weak self] in
-            for i in 0..<Self.alarmRepeatCount {
-                guard !Task.isCancelled, let self, self.phase == .finished, self.isRinging else { break }
-                self.playSingleChime()
-                if i < Self.alarmRepeatCount - 1 {
-                    try? await Task.sleep(for: .seconds(Self.alarmRepeatInterval))
-                }
-            }
-            guard !Task.isCancelled else { return }
-            self?.isRinging = false
-        }
+        playToneLoop(duration: Self.finishedBannerDuration)
     }
 
-    private func playSingleChime() {
-        if let player = try? AVAudioPlayer(data: Self.cachedChimeWAV) {
-            player.volume = 0.9
+    private func playToneLoop(duration: TimeInterval) {
+        if let player = makeAudioPlayer() {
+            player.volume = 0.85
+            player.numberOfLoops = -1
             player.prepareToPlay()
-            player.play()
-            alarmPlayer = player
-        } else if let glassURL = URL(string: "file:///System/Library/Sounds/Glass.aiff"),
-                  let player = try? AVAudioPlayer(contentsOf: glassURL) {
-            player.volume = 0.9
             player.play()
             alarmPlayer = player
         } else {
@@ -204,62 +234,28 @@ final class NotchTimerModel: ObservableObject {
         if Defaults[.enableHaptics] {
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
+        alarmTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(duration))
+            guard !Task.isCancelled else { return }
+            self?.stopAlarm()
+        }
     }
 
-    /// 内存合成清脆温和的 Apple 风格双音钟声（G5 → D6 两组泛音衰减，走媒体声道不受“界面音效静音”影响）
-    private static func buildChimeWAV() -> Data {
-        let sampleRate = 44100
-        let duration = 1.35
-        let totalSamples = Int(Double(sampleRate) * duration)
-        var pcm = [Int16](repeating: 0, count: totalSamples)
-
-        let notes: [(start: Double, freq: Double, amp: Double)] = [
-            (0.00, 783.99, 0.36),   // G5
-            (0.15, 1174.66, 0.42),  // D6
-            (0.56, 783.99, 0.36),   // G5
-            (0.71, 1174.66, 0.46)   // D6
+    private func makeAudioPlayer() -> AVAudioPlayer? {
+        let candidates = [
+            TimerAlarmTone.current.filePath,
+            TimerAlarmTone.daybreak.filePath,
+            TimerAlarmTone.valley.filePath,
+            TimerAlarmTone.glass.filePath
         ]
-
-        for i in 0..<totalSamples {
-            let t = Double(i) / Double(sampleRate)
-            var sample = 0.0
-            for note in notes where t >= note.start {
-                let dt = t - note.start
-                guard dt < 0.62 else { continue }
-                let attack = dt < 0.006 ? (0.5 - 0.5 * cos(.pi * dt / 0.006)) : 1.0
-                let env1 = exp(-5.2 * dt)
-                let env2 = exp(-9.5 * dt)
-                let env3 = exp(-16.0 * dt)
-                let w = 2.0 * .pi * note.freq * dt
-                let tone = sin(w) * env1 + 0.26 * sin(2.0 * w) * env2 + 0.09 * sin(3.0 * w) * env3
-                sample += note.amp * attack * tone
+        for path in candidates {
+            let url = URL(fileURLWithPath: path)
+            if FileManager.default.isReadableFile(atPath: path),
+               let player = try? AVAudioPlayer(contentsOf: url) {
+                return player
             }
-            let clamped = max(-0.95, min(0.95, sample))
-            pcm[i] = Int16(clamped * Double(Int16.max))
         }
-
-        var wav = Data()
-        let dataBytes = UInt32(totalSamples * 2)
-        let riffBytes = UInt32(36) + dataBytes
-        wav.append(contentsOf: "RIFF".utf8)
-        withUnsafeBytes(of: riffBytes.littleEndian) { wav.append(contentsOf: $0) }
-        wav.append(contentsOf: "WAVEfmt ".utf8)
-        withUnsafeBytes(of: UInt32(16).littleEndian) { wav.append(contentsOf: $0) }
-        withUnsafeBytes(of: UInt16(1).littleEndian) { wav.append(contentsOf: $0) }  // PCM
-        withUnsafeBytes(of: UInt16(1).littleEndian) { wav.append(contentsOf: $0) }  // Mono
-        withUnsafeBytes(of: UInt32(sampleRate).littleEndian) { wav.append(contentsOf: $0) }
-        withUnsafeBytes(of: UInt32(sampleRate * 2).littleEndian) { wav.append(contentsOf: $0) }
-        withUnsafeBytes(of: UInt16(2).littleEndian) { wav.append(contentsOf: $0) }
-        withUnsafeBytes(of: UInt16(16).littleEndian) { wav.append(contentsOf: $0) }
-        wav.append(contentsOf: "data".utf8)
-        withUnsafeBytes(of: dataBytes.littleEndian) { wav.append(contentsOf: $0) }
-        pcm.withUnsafeBufferPointer { buf in
-            wav.append(UnsafeBufferPointer(
-                start: UnsafeRawPointer(buf.baseAddress!).assumingMemoryBound(to: UInt8.self),
-                count: Int(dataBytes)
-            ))
-        }
-        return wav
+        return nil
     }
 
     /// mm:ss（超过一小时显示总分钟，比如 125:00）
@@ -379,9 +375,9 @@ struct NotchTimerView: View {
         }
     }
 
-    // 时间到
+    // 时间到（仅当倒计时归零瞬间刘海恰好处在展开态时短暂闪烁提示，无需任何点击即自动复位）
     private var finished: some View {
-        HStack(spacing: DS.Space.s) {
+        HStack(spacing: DS.Space.m) {
             Image(systemName: "bell.fill")
                 .font(DS.Fonts.title)
                 .foregroundStyle(DS.Colors.accent)
@@ -390,17 +386,16 @@ struct NotchTimerView: View {
                     .font(DS.Fonts.title)
                     .foregroundStyle(DS.Colors.accent)
                     .lineLimit(1)
-                Text("\(timer.lastMinutes) 分钟计时结束了")
+                Text("\(timer.lastMinutes) 分钟计时已结束")
                     .font(DS.Fonts.caption)
                     .foregroundStyle(DS.Colors.textSecondary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
             }
-            Spacer(minLength: DS.Space.xs)
-            VStack(alignment: .trailing, spacing: DS.Space.s) {
-                AoomooaPillButton(title: "再来一次", icon: "arrow.clockwise", prominent: true) { timer.again() }
-                AoomooaPillButton(title: "完成", icon: "checkmark") { timer.cancel() }
-            }
+        }
+        .task {
+            try? await Task.sleep(for: .seconds(2.6))
+            guard !Task.isCancelled, timer.phase == .finished else { return }
+            timer.cancel()
         }
     }
 }
@@ -462,7 +457,7 @@ struct AoomooaPillButton: View {
     }
 }
 
-// MARK: - 收起时的刘海：左边 ⏱，右边 mm:ss
+// MARK: - 收起时的刘海：左边 ⏱，右边 mm:ss（到点时双侧闪烁 + 响铃，鼠标悬停展开即结束）
 
 struct AoomooaTimerLiveActivity: View {
     @ObservedObject private var timer = NotchTimerModel.shared
@@ -474,38 +469,63 @@ struct AoomooaTimerLiveActivity: View {
 
     @State private var bellPulse = false
 
+    private var isAlerting: Bool {
+        timer.phase == .finished
+    }
+
     var body: some View {
-        TimelineView(.periodic(from: .now, by: Self.tick)) { context in
-            HStack(spacing: 0) {
-                Image(systemName: icon)
-                    .font(DS.Fonts.body(.semibold))
-                    .foregroundStyle(tint)
-                    .scaleEffect(timer.isRinging && bellPulse ? 1.18 : 1.0)
-                    .rotationEffect(.degrees(timer.isRinging ? (bellPulse ? 14 : -14) : 0))
-                    .frame(width: DS.Size.timerSide, height: height)
-                Rectangle()
-                    .fill(DS.Colors.background)
-                    .frame(width: max(0, middleWidth), height: height)
-                Text(timer.phase == .finished ? "时间到" : NotchTimerModel.clock(timer.remaining(at: context.date)))
-                    .font(DS.Fonts.body(.semibold).monospacedDigit())
-                    .foregroundStyle(tint)
-                    .opacity(timer.isRinging && bellPulse ? 0.65 : 1.0)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .frame(width: DS.Size.timerSide, height: height)
+        Group {
+            if isAlerting {
+                HStack(spacing: 0) {
+                    Image(systemName: "bell.fill")
+                        .font(DS.Fonts.body(.semibold))
+                        .foregroundStyle(DS.Colors.accent)
+                        .scaleEffect(bellPulse ? 1.22 : 0.94)
+                        .rotationEffect(.degrees(bellPulse ? 16 : -16))
+                        .opacity(bellPulse ? 0.18 : 1.0)
+                        .frame(width: DS.Size.timerSide, height: height)
+                    Rectangle()
+                        .fill(DS.Colors.background)
+                        .frame(width: max(0, middleWidth), height: height)
+                    Text("时间到")
+                        .font(DS.Fonts.body(.semibold))
+                        .foregroundStyle(DS.Colors.accent)
+                        .opacity(bellPulse ? 0.18 : 1.0)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .frame(width: DS.Size.timerSide, height: height)
+                }
+            } else {
+                TimelineView(.periodic(from: .now, by: Self.tick)) { context in
+                    HStack(spacing: 0) {
+                        Image(systemName: icon)
+                            .font(DS.Fonts.body(.semibold))
+                            .foregroundStyle(tint)
+                            .frame(width: DS.Size.timerSide, height: height)
+                        Rectangle()
+                            .fill(DS.Colors.background)
+                            .frame(width: max(0, middleWidth), height: height)
+                        Text(NotchTimerModel.clock(timer.remaining(at: context.date)))
+                            .font(DS.Fonts.body(.semibold).monospacedDigit())
+                            .foregroundStyle(tint)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .frame(width: DS.Size.timerSide, height: height)
+                    }
+                }
             }
         }
         .frame(height: height)
-        .onAppear { updateBellAnimation(timer.isRinging) }
-        .onChange(of: timer.isRinging) { _, ringing in updateBellAnimation(ringing) }
+        .onAppear { updateBellAnimation(isAlerting) }
+        .onChange(of: isAlerting) { _, alerting in updateBellAnimation(alerting) }
     }
 
-    private func updateBellAnimation(_ ringing: Bool) {
+    private func updateBellAnimation(_ alerting: Bool) {
         withTransaction(DS.Motion.instant) { bellPulse = false }
-        guard ringing else { return }
+        guard alerting else { return }
         DispatchQueue.main.async {
-            guard timer.isRinging else { return }
-            withAnimation(.easeInOut(duration: 0.22).repeatForever(autoreverses: true)) {
+            guard isAlerting else { return }
+            withAnimation(.easeInOut(duration: 0.36).repeatForever(autoreverses: true)) {
                 bellPulse = true
             }
         }
