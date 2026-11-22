@@ -532,6 +532,7 @@ struct ContentView: View {
     }
 
     private func doOpen() {
+        notchTimer.stopAlarm()
         withAnimation(AoomooaHover.expandAnimation) {
             vm.open()
         }

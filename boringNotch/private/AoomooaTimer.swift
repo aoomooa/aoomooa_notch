@@ -8,6 +8,8 @@
 //
 
 import AppKit
+import AVFoundation
+import Defaults
 import SwiftUI
 
 @MainActor
@@ -20,10 +22,14 @@ final class NotchTimerModel: ObservableObject {
     static let presetMinutes = [5, 10, 15, 25]
     /// “时间到”在刘海上停留多久后自动收起（秒）
     static let finishedBannerDuration: TimeInterval = 120
-    /// 到点提示音（系统自带声音）
-    static let finishSound = "Hero"
+    /// 到点闹钟连响轮数（每轮双音钟声，展开刘海或点完成立即止响）
+    static let alarmRepeatCount = 5
+    /// 每轮闹钟间隔（秒）
+    static let alarmRepeatInterval: TimeInterval = 2.1
 
     @Published private(set) var phase: Phase = .idle
+    /// 是否正在持续响铃中（展开刘海或点按钮即停）
+    @Published private(set) var isRinging: Bool = false
     /// 本轮总时长（秒，含中途 +1 分钟）
     @Published private(set) var duration: TimeInterval = 0
     /// 上一次开始时选的分钟数（“再来一次”用）
@@ -35,6 +41,10 @@ final class NotchTimerModel: ObservableObject {
     private var pausedRemaining: TimeInterval = 0
     private var finishTask: Task<Void, Never>?
     private var bannerTask: Task<Void, Never>?
+    private var alarmTask: Task<Void, Never>?
+    private var alarmPlayer: AVAudioPlayer?
+
+    private static let cachedChimeWAV: Data = buildChimeWAV()
 
     private init() {}
 
@@ -107,6 +117,7 @@ final class NotchTimerModel: ObservableObject {
 
     /// 结束 / 完成
     func cancel() {
+        stopAlarm()
         finishTask?.cancel()
         bannerTask?.cancel()
         endDate = nil
@@ -114,9 +125,25 @@ final class NotchTimerModel: ObservableObject {
         phase = .idle
     }
 
+    /// 停止闹钟响铃（展开刘海查看或点击按钮时调用）
+    func stopAlarm() {
+        alarmTask?.cancel()
+        alarmTask = nil
+        alarmPlayer?.stop()
+        alarmPlayer = nil
+        if isRinging { isRinging = false }
+    }
+
+    /// 设置页“试听闹钟”按钮：播放一轮清脆双音钟声
+    func previewAlarm() {
+        stopAlarm()
+        playSingleChime()
+    }
+
     // MARK: 内部
 
     private func run(for seconds: TimeInterval) {
+        stopAlarm()
         bannerTask?.cancel()
         endDate = Date().addingTimeInterval(seconds)
         phase = .running
@@ -133,7 +160,7 @@ final class NotchTimerModel: ObservableObject {
         endDate = nil
         pausedRemaining = 0
         phase = .finished
-        NSSound(named: NSSound.Name(Self.finishSound))?.play()
+        startAlarm()
         // 下次展开直接看到“时间到”和“再来一次”
         withAnimation(DS.Motion.page) { BoringViewCoordinator.shared.currentView = .timer }
         bannerTask?.cancel()
@@ -142,6 +169,97 @@ final class NotchTimerModel: ObservableObject {
             guard !Task.isCancelled, self?.phase == .finished else { return }
             self?.cancel()
         }
+    }
+
+    private func startAlarm() {
+        stopAlarm()
+        isRinging = true
+        alarmTask = Task { [weak self] in
+            for i in 0..<Self.alarmRepeatCount {
+                guard !Task.isCancelled, let self, self.phase == .finished, self.isRinging else { break }
+                self.playSingleChime()
+                if i < Self.alarmRepeatCount - 1 {
+                    try? await Task.sleep(for: .seconds(Self.alarmRepeatInterval))
+                }
+            }
+            guard !Task.isCancelled else { return }
+            self?.isRinging = false
+        }
+    }
+
+    private func playSingleChime() {
+        if let player = try? AVAudioPlayer(data: Self.cachedChimeWAV) {
+            player.volume = 0.9
+            player.prepareToPlay()
+            player.play()
+            alarmPlayer = player
+        } else if let glassURL = URL(string: "file:///System/Library/Sounds/Glass.aiff"),
+                  let player = try? AVAudioPlayer(contentsOf: glassURL) {
+            player.volume = 0.9
+            player.play()
+            alarmPlayer = player
+        } else {
+            NSSound.beep()
+        }
+        if Defaults[.enableHaptics] {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        }
+    }
+
+    /// 内存合成清脆温和的 Apple 风格双音钟声（G5 → D6 两组泛音衰减，走媒体声道不受“界面音效静音”影响）
+    private static func buildChimeWAV() -> Data {
+        let sampleRate = 44100
+        let duration = 1.35
+        let totalSamples = Int(Double(sampleRate) * duration)
+        var pcm = [Int16](repeating: 0, count: totalSamples)
+
+        let notes: [(start: Double, freq: Double, amp: Double)] = [
+            (0.00, 783.99, 0.36),   // G5
+            (0.15, 1174.66, 0.42),  // D6
+            (0.56, 783.99, 0.36),   // G5
+            (0.71, 1174.66, 0.46)   // D6
+        ]
+
+        for i in 0..<totalSamples {
+            let t = Double(i) / Double(sampleRate)
+            var sample = 0.0
+            for note in notes where t >= note.start {
+                let dt = t - note.start
+                guard dt < 0.62 else { continue }
+                let attack = dt < 0.006 ? (0.5 - 0.5 * cos(.pi * dt / 0.006)) : 1.0
+                let env1 = exp(-5.2 * dt)
+                let env2 = exp(-9.5 * dt)
+                let env3 = exp(-16.0 * dt)
+                let w = 2.0 * .pi * note.freq * dt
+                let tone = sin(w) * env1 + 0.26 * sin(2.0 * w) * env2 + 0.09 * sin(3.0 * w) * env3
+                sample += note.amp * attack * tone
+            }
+            let clamped = max(-0.95, min(0.95, sample))
+            pcm[i] = Int16(clamped * Double(Int16.max))
+        }
+
+        var wav = Data()
+        let dataBytes = UInt32(totalSamples * 2)
+        let riffBytes = UInt32(36) + dataBytes
+        wav.append(contentsOf: "RIFF".utf8)
+        withUnsafeBytes(of: riffBytes.littleEndian) { wav.append(contentsOf: $0) }
+        wav.append(contentsOf: "WAVEfmt ".utf8)
+        withUnsafeBytes(of: UInt32(16).littleEndian) { wav.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt16(1).littleEndian) { wav.append(contentsOf: $0) }  // PCM
+        withUnsafeBytes(of: UInt16(1).littleEndian) { wav.append(contentsOf: $0) }  // Mono
+        withUnsafeBytes(of: UInt32(sampleRate).littleEndian) { wav.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt32(sampleRate * 2).littleEndian) { wav.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt16(2).littleEndian) { wav.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt16(16).littleEndian) { wav.append(contentsOf: $0) }
+        wav.append(contentsOf: "data".utf8)
+        withUnsafeBytes(of: dataBytes.littleEndian) { wav.append(contentsOf: $0) }
+        pcm.withUnsafeBufferPointer { buf in
+            wav.append(UnsafeBufferPointer(
+                start: UnsafeRawPointer(buf.baseAddress!).assumingMemoryBound(to: UInt8.self),
+                count: Int(dataBytes)
+            ))
+        }
+        return wav
     }
 
     /// mm:ss（超过一小时显示总分钟，比如 125:00）
@@ -354,12 +472,16 @@ struct AoomooaTimerLiveActivity: View {
     let middleWidth: CGFloat
     private static let tick: TimeInterval = 1
 
+    @State private var bellPulse = false
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: Self.tick)) { context in
             HStack(spacing: 0) {
                 Image(systemName: icon)
                     .font(DS.Fonts.body(.semibold))
                     .foregroundStyle(tint)
+                    .scaleEffect(timer.isRinging && bellPulse ? 1.18 : 1.0)
+                    .rotationEffect(.degrees(timer.isRinging ? (bellPulse ? 14 : -14) : 0))
                     .frame(width: DS.Size.timerSide, height: height)
                 Rectangle()
                     .fill(DS.Colors.background)
@@ -367,12 +489,26 @@ struct AoomooaTimerLiveActivity: View {
                 Text(timer.phase == .finished ? "时间到" : NotchTimerModel.clock(timer.remaining(at: context.date)))
                     .font(DS.Fonts.body(.semibold).monospacedDigit())
                     .foregroundStyle(tint)
+                    .opacity(timer.isRinging && bellPulse ? 0.65 : 1.0)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .frame(width: DS.Size.timerSide, height: height)
             }
         }
         .frame(height: height)
+        .onAppear { updateBellAnimation(timer.isRinging) }
+        .onChange(of: timer.isRinging) { _, ringing in updateBellAnimation(ringing) }
+    }
+
+    private func updateBellAnimation(_ ringing: Bool) {
+        withTransaction(DS.Motion.instant) { bellPulse = false }
+        guard ringing else { return }
+        DispatchQueue.main.async {
+            guard timer.isRinging else { return }
+            withAnimation(.easeInOut(duration: 0.22).repeatForever(autoreverses: true)) {
+                bellPulse = true
+            }
+        }
     }
 
     private var icon: String {

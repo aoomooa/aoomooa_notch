@@ -424,6 +424,15 @@ struct AoomooaModulesSettingsView: View {
                 aoomooaValueRow("滚轮默认时长", "\(timerMinutes) 分钟")
             }
             Toggle("收起时在刘海上显示倒计时", isOn: $timerShowWhenClosed)
+            LabeledContent("到点闹钟提示音") {
+                Button("试听闹钟") {
+                    NotchTimerModel.shared.previewAlarm()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(.secondary)
+                .foregroundStyle(.primary)
+            }
         }
     }
 

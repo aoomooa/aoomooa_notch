@@ -123,6 +123,8 @@ echo "▶ 安装到 ${DEST}"
 if [[ "${DEST}" != "/Applications/aoomooa.app" ]]; then rm -rf "/Applications/aoomooa.app"; fi
 rm -rf "${DEST}"
 ditto "${BUILT}" "${DEST}"
+# 清理 .build 下的临时 .app，防止 macOS LaunchServices 开机自启时错拉起临时构建包
+rm -rf "${BUILT}" "${BUILT}.dSYM"
 
 # 让 Finder / 启动台 / 程序坞马上用新图标（不然可能还显示缓存里的旧图标）
 touch "${DEST}"
